@@ -68,9 +68,9 @@ export class AdminService {
   async listCourses() {
     const rows = await this.db.select({
       c: courses,
-      lessons: sql<number>`(select count(*)::int from ${lessons} l join ${modules} m on m.id = l.module_id where m.course_id = ${courses.id})`,
-      learners: sql<number>`(select count(*)::int from ${enrollments} e where e.course_id = ${courses.id})`,
-      completed: sql<number>`(select count(*)::int from ${enrollments} e where e.course_id = ${courses.id} and e.completed_at is not null)`,
+      lessons: sql<number>`(select count(*)::int from ${lessons} l join ${modules} m on m.id = l.module_id where m.course_id = "courses"."id")`,
+      learners: sql<number>`(select count(*)::int from ${enrollments} e where e.course_id = "courses"."id")`,
+      completed: sql<number>`(select count(*)::int from ${enrollments} e where e.course_id = "courses"."id" and e.completed_at is not null)`,
     }).from(courses).orderBy(desc(courses.updatedAt));
     return rows.map((r) => ({ ...r.c, lessonCount: r.lessons, learnerCount: r.learners, completedCount: r.completed }));
   }

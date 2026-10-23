@@ -1,0 +1,146 @@
+/* ═══════════════════════════════════════════════════════════
+   دیزاین‌سیستم «مدرسهٔ هدایت»
+   رنگ‌ها از لوگو: سبزِ برگ، فیروزه‌ای و آبیِ گنبد، زردِ شعله، سرمه‌ایِ نوشته.
+   فونت: رواق (اگر فایلش در public/fonts باشد)، وگرنه وزیرمتن.
+   ═══════════════════════════════════════════════════════════ */
+@import 'tailwindcss';
+@import 'vazirmatn/Vazirmatn-Variable-font-face.css';
+
+@font-face { font-family: 'Ravagh'; src: url('/fonts/RavaghFaNum-Regular.woff') format('woff'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Ravagh'; src: url('/fonts/RavaghFaNum-Medium.woff') format('woff'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Ravagh'; src: url('/fonts/RavaghFaNum-SemiBold.woff') format('woff'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Ravagh'; src: url('/fonts/RavaghFaNum-Bold.woff') format('woff'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Ravagh'; src: url('/fonts/RavaghFaNum-ExtraBold.woff') format('woff'); font-weight: 800; font-display: swap; }
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  /* برند */
+  --leaf: #0E9F5A;        /* سبز برگ — رنگ اصلی */
+  --leaf-ink: #0A7A45;
+  --leaf-soft: #E2F4EA;
+  --sprout: #8CC63F;      /* سبز روشن نوک برگ */
+  --dome: #3FB4C8;        /* فیروزه‌ای گنبد */
+  --dome-ink: #1D7F92;
+  --dome-soft: #E1F3F6;
+  --deep: #1F6FA8;        /* آبی گنبد */
+  --deep-soft: #E4EEF7;
+  --flame: #F2B705;       /* زرد شعله */
+  --flame-ink: #8A6500;
+  --flame-soft: #FFF4D1;
+  --rose: #D64A6A;
+  --rose-soft: #FBE6EB;
+  /* خنثی‌ها با ته‌رنگ سرمه‌ای نوشتهٔ لوگو */
+  --ink: #262A4F;
+  --body: #3E4462;
+  --muted: #6C7290;
+  --line: #E3E6EE;
+  --line-strong: #CDD2DF;
+  --bg: #F6F8F7;
+  --card: #FFFFFF;
+  --sunken: #EEF1F2;
+  --focus: 0 0 0 3px color-mix(in srgb, var(--leaf) 35%, transparent);
+  --shadow-sm: 0 1px 2px rgb(38 42 79 / .06), 0 2px 8px rgb(38 42 79 / .04);
+  --shadow-md: 0 4px 12px rgb(38 42 79 / .08), 0 12px 32px rgb(38 42 79 / .06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --leaf: #34C47F; --leaf-ink: #7FE0AE; --leaf-soft: #133526;
+    --sprout: #A6D96A; --dome: #5CC9DB; --dome-ink: #94DFEB; --dome-soft: #13323A;
+    --deep: #6AA8DA; --deep-soft: #15283A; --flame: #F5C842; --flame-ink: #F5C842; --flame-soft: #3A2F0C;
+    --rose: #EF7A94; --rose-soft: #3B1A23;
+    --ink: #ECEEF6; --body: #C8CCDD; --muted: #8E93AD; --line: #2A2F45; --line-strong: #3A405A;
+    --bg: #12141F; --card: #1A1D2B; --sunken: #161926;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --leaf: #34C47F; --leaf-ink: #7FE0AE; --leaf-soft: #133526;
+  --sprout: #A6D96A; --dome: #5CC9DB; --dome-ink: #94DFEB; --dome-soft: #13323A;
+  --deep: #6AA8DA; --deep-soft: #15283A; --flame: #F5C842; --flame-ink: #F5C842; --flame-soft: #3A2F0C;
+  --rose: #EF7A94; --rose-soft: #3B1A23;
+  --ink: #ECEEF6; --body: #C8CCDD; --muted: #8E93AD; --line: #2A2F45; --line-strong: #3A405A;
+  --bg: #12141F; --card: #1A1D2B; --sunken: #161926;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: 'Ravagh', 'Vazirmatn', Tahoma, system-ui, sans-serif;
+  --color-leaf: var(--leaf); --color-leaf-ink: var(--leaf-ink); --color-leaf-soft: var(--leaf-soft);
+  --color-sprout: var(--sprout);
+  --color-dome: var(--dome); --color-dome-ink: var(--dome-ink); --color-dome-soft: var(--dome-soft);
+  --color-deep: var(--deep); --color-deep-soft: var(--deep-soft);
+  --color-flame: var(--flame); --color-flame-ink: var(--flame-ink); --color-flame-soft: var(--flame-soft);
+  --color-rose: var(--rose); --color-rose-soft: var(--rose-soft);
+  --color-ink: var(--ink); --color-body: var(--body); --color-muted: var(--muted);
+  --color-line: var(--line); --color-line-strong: var(--line-strong);
+  --color-bg: var(--bg); --color-card: var(--card); --color-sunken: var(--sunken);
+  --radius-xl: 14px; --radius-2xl: 20px; --radius-3xl: 28px;
+  --shadow-soft: var(--shadow-sm); --shadow-lift: var(--shadow-md);
+}
+
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--body);
+  font-family: var(--font-sans); font-size: 16px; line-height: 1.85;
+  font-feature-settings: 'ss01';
+  overflow-x: clip;
+}
+h1, h2, h3, h4 { color: var(--ink); line-height: 1.5; text-wrap: balance; margin: 0; }
+p { margin: 0; }
+:focus-visible { outline: none; box-shadow: var(--focus); border-radius: 8px; }
+.wrap { width: 100%; max-width: 1180px; margin-inline: auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.tnum { font-variant-numeric: tabular-nums; }
+.ltr { direction: ltr; unicode-bidi: plaintext; }
+
+/* اجزا */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding-inline: 20px; border-radius: 12px; font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; border: 1px solid transparent; transition: background-color .15s, border-color .15s, transform .2s, box-shadow .2s; white-space: nowrap; text-decoration: none; }
+.btn:active { transform: translateY(1px); }
+.btn[disabled] { opacity: .55; cursor: not-allowed; }
+.btn-primary { background: var(--leaf); color: #fff; box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--leaf) 70%, transparent); }
+.btn-primary:hover:not([disabled]) { background: var(--leaf-ink); }
+.btn-secondary { background: var(--card); color: var(--ink); border-color: var(--line-strong); }
+.btn-secondary:hover:not([disabled]) { border-color: var(--muted); }
+.btn-ghost { background: transparent; color: var(--body); }
+.btn-ghost:hover:not([disabled]) { background: var(--sunken); }
+.btn-danger { background: var(--rose); color: #fff; }
+.btn-sm { height: 36px; padding-inline: 14px; font-size: 14px; border-radius: 10px; }
+.btn-lg { height: 52px; padding-inline: 26px; font-size: 16px; }
+.btn-icon { width: 40px; padding: 0; }
+
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow-sm); }
+.field { display: grid; gap: 6px; }
+.field > label { font-size: 14px; font-weight: 700; color: var(--ink); }
+.input { width: 100%; height: 46px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--card); color: var(--ink); padding-inline: 14px; font: inherit; font-size: 16px; transition: border-color .15s, box-shadow .15s; }
+.input:focus { outline: none; border-color: var(--leaf); box-shadow: var(--focus); }
+textarea.input { height: auto; min-height: 96px; padding-block: 10px; resize: vertical; line-height: 1.8; }
+select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236C7290' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-position: 14px 50%; background-repeat: no-repeat; padding-left: 36px; }
+.hint { font-size: 13px; color: var(--muted); }
+.err { font-size: 13px; color: var(--rose); display: flex; gap: 6px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding-inline: 10px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--sunken); color: var(--body); white-space: nowrap; }
+.chip-leaf { background: var(--leaf-soft); color: var(--leaf-ink); }
+.chip-flame { background: var(--flame-soft); color: var(--flame-ink); }
+.chip-dome { background: var(--dome-soft); color: var(--dome-ink); }
+.chip-rose { background: var(--rose-soft); color: var(--rose); }
+.bar { height: 8px; border-radius: 8px; background: var(--line); overflow: hidden; }
+.bar > span { display: block; height: 100%; border-radius: 8px; background: linear-gradient(90deg, var(--sprout), var(--leaf)); transition: width .5s; }
+.seg { display: inline-flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--sunken); max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.seg::-webkit-scrollbar { display: none; }
+.seg > button { flex: none; white-space: nowrap; height: 34px; padding-inline: 14px; border: 0; border-radius: 9px; background: transparent; font: inherit; font-size: 14px; font-weight: 600; color: var(--body); cursor: pointer; }
+.seg > button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow-sm); }
+.prose-fa { font-size: 17px; line-height: 2.05; color: var(--body); max-width: 68ch; }
+.prose-fa p + p { margin-top: 1em; }
+
+/* حرکت */
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise .45s cubic-bezier(.2, .8, .2, 1) both; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; } }
+
+/* رنگ دوره‌ها */
+.tint-green { --t: var(--leaf); --t-soft: var(--leaf-soft); --t-ink: var(--leaf-ink); }
+.tint-peri, .tint-deep { --t: var(--deep); --t-soft: var(--deep-soft); --t-ink: var(--deep); }
+.tint-amber, .tint-flame { --t: var(--flame); --t-soft: var(--flame-soft); --t-ink: var(--flame-ink); }
+.tint-sky, .tint-dome { --t: var(--dome); --t-soft: var(--dome-soft); --t-ink: var(--dome-ink); }
+.tint-rose { --t: var(--rose); --t-soft: var(--rose-soft); --t-ink: var(--rose); }
+.cover { background: radial-gradient(120% 120% at 100% 0%, color-mix(in srgb, var(--t) 22%, var(--t-soft)) 0%, var(--t-soft) 60%); color: var(--t-ink); }

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { BadgeCheck, CircleAlert, Compass, Search, ShieldX } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams, useRouteError } from 'react-router';
 import { Brand } from '../components/Shell';
 import { Spinner } from '../components/ui';
 import { api } from '../lib/api';
@@ -97,6 +97,20 @@ export function NotFound() {
       <h1 className="text-2xl font-extrabold">این صفحه پیدا نشد</h1>
       <p className="text-muted">شاید پیوند قدیمی است یا این درس و دوره برداشته شده.</p>
       <div className="mt-2 flex gap-2"><Link to="/" className="btn btn-primary">خانه</Link><Link to="/learn" className="btn btn-secondary">همهٔ دوره‌ها</Link></div>
+    </div>
+  );
+}
+
+/** وقتی صفحه‌ای هنگام نمایش خطا داد */
+export function RouteError() {
+  const e = useRouteError() as Error | undefined;
+  return (
+    <div className="mx-auto grid max-w-lg justify-items-center gap-3 px-4 py-16 text-center">
+      <CircleAlert className="size-16 rounded-3xl bg-flame-soft p-4 text-flame-ink" />
+      <h1 className="text-2xl font-extrabold">چیزی درست کار نکرد</h1>
+      <p className="text-muted">این صفحه باز نشد. پیشرفت و نوشته‌هایتان سالم است؛ یک بار دوباره امتحان کنید.</p>
+      <div className="mt-2 flex gap-2"><button className="btn btn-primary" onClick={() => window.location.reload()}>دوباره امتحان کنید</button><a href="/" className="btn btn-secondary">خانه</a></div>
+      {e?.message && <details className="mt-4 text-xs text-muted"><summary>جزئیات فنی</summary><code dir="ltr">{e.message}</code></details>}
     </div>
   );
 }

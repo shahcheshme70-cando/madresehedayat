@@ -17,7 +17,7 @@ import Learn, { PathPage } from './pages/Learn';
 import Lesson from './pages/Lesson';
 import Login from './pages/Login';
 import Me from './pages/Me';
-import { NotFound, TermsPage, VerifyPage } from './pages/Public';
+import { NotFound, RouteError, TermsPage, VerifyPage } from './pages/Public';
 import Settings, { applyTheme, savedTheme } from './pages/Settings';
 import './styles/app.css';
 
@@ -48,6 +48,7 @@ const router = createBrowserRouter([
   { path: '/terms', element: <TermsPage /> },
   {
     element: <RequireAuth><Shell /></RequireAuth>,
+    errorElement: <RouteError />,
     children: [
       { path: '/', element: <Home /> },
       { path: '/learn', element: <Learn /> },
@@ -62,6 +63,7 @@ const router = createBrowserRouter([
   {
     path: '/admin',
     element: <RequireAuth><RequireStaff><AdminShell /></RequireStaff></RequireAuth>,
+    errorElement: <RouteError />,
     children: [
       { index: true, element: <Dashboard /> },
       { path: 'courses', element: <Courses /> },

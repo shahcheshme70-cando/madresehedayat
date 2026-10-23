@@ -235,7 +235,7 @@ export class AdminService {
     const rows = await this.db.select({
       id: users.id, mobile: users.mobile, firstName: users.firstName, lastName: users.lastName, gender: users.gender, isActive: users.isActive,
       createdAt: users.createdAt, county: counties.name, province: provinces.name, mosque: mosques.name, nearMosque: users.nearMosque,
-      roles: sql<string[]>`coalesce((select array_agg(r.role) from ${roleGrants} r where r.user_id = ${users.id}), '{}')`,
+      roles: sql<string[]>`coalesce((select array_agg(distinct r.role::text) from ${roleGrants} r where r.user_id = ${users.id}), '{}'::text[])`,
       courses: sql<number>`(select count(*)::int from ${enrollments} e where e.user_id = ${users.id})`,
     }).from(users).leftJoin(counties, eq(counties.id, users.countyId)).leftJoin(provinces, eq(provinces.id, counties.provinceId))
       .leftJoin(mosques, eq(mosques.id, users.mosqueId)).where(where).orderBy(desc(users.createdAt)).limit(50).offset(Math.max(0, page - 1) * 50);

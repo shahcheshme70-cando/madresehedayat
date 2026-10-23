@@ -4,7 +4,7 @@
  */
 import { relations, sql } from 'drizzle-orm';
 import {
-  boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex,
+  boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { createId } from './id';
 
@@ -62,7 +62,7 @@ export const roleGrants = pgTable('role_grants', {
   role: role('role').notNull(),
   networkId: text('network_id').references(() => networks.id), // برای IMAM و ORG_ADMIN
   createdAt: createdAt(),
-}, (t) => [uniqueIndex('role_grant_uq').on(t.userId, t.role, t.networkId)]);
+}, (t) => [unique('role_grant_uq').on(t.userId, t.role, t.networkId).nullsNotDistinct()]);
 
 // ───────────── جغرافیا و مسجد ─────────────
 export const provinces = pgTable('provinces', {

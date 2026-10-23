@@ -1,0 +1,83 @@
+# مدرسهٔ هدایت — اجرای کامل: پایگاه داده، ذخیره‌ساز فایل، API و وب
+# راه‌اندازی:  cp .env.example .env  →  مقدارها را عوض کنید  →  docker compose up -d --build
+name: madrese
+
+x-images: &images
+  NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+  NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+
+services:
+  db:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: madrese
+      POSTGRES_USER: madrese
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD را در .env بگذارید}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U madrese -d madrese"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-04-22T22-12-26Z}
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-madrese}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY را در .env بگذارید}
+    volumes:
+      - files:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      args: *images
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://madrese:${POSTGRES_PASSWORD}@db:5432/madrese
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET را در .env بگذارید}
+      OTP_SECRET: ${OTP_SECRET:?OTP_SECRET را در .env بگذارید}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      SMS_PROVIDER: ${SMS_PROVIDER:-console}
+      KAVENEGAR_API_KEY: ${KAVENEGAR_API_KEY:-}
+      KAVENEGAR_OTP_TEMPLATE: ${KAVENEGAR_OTP_TEMPLATE:-madrese-otp}
+      BOOTSTRAP_ADMIN_MOBILES: ${BOOTSTRAP_ADMIN_MOBILES:-}
+      SEED_DEMO: ${SEED_DEMO:-false}
+      MINIO_HOST: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-madrese}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: madrese
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        <<: *images
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:1.27-alpine}
+    restart: unless-stopped
+    depends_on:
+      api: { condition: service_healthy }
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  db-data:
+  files:

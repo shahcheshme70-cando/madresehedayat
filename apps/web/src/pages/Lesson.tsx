@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { Dialog, ErrorBox, LESSON_ICON, Spinner, useToast } from '../components/ui';
 import { api, ApiError } from '../lib/api';
+import { ToolLesson } from './Tools';
 import { fa, jDate, LESSON_LABEL, MISSION_LABEL } from '../lib/fa';
 import type { Completion, CourseDetail, LessonDetail, QuizQuestion } from '../lib/types';
 
@@ -112,6 +113,7 @@ function LessonBody({ l, onChange }: { l: LessonDetail; onChange: (c?: Completio
     case 'QUIZ': return <Quiz l={l} onChange={onChange} />;
     case 'WORKSHEET': return <Worksheet l={l} onChange={onChange} />;
     case 'MISSION': return <Mission l={l} onChange={onChange} />;
+    case 'TOOL': return <ToolLesson lessonId={l.id} />;
     default: return (
       <div className="flex items-start gap-3 rounded-2xl bg-sunken p-5"><Wrench className="size-5 shrink-0 text-muted" /><p>این نوع درس ({LESSON_LABEL[l.type]}) در مرحلهٔ بعد ساخته می‌شود.</p></div>
     );

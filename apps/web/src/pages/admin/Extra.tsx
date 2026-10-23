@@ -3,7 +3,8 @@ import { BookOpenCheck, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { Empty, Spinner, useToast } from '../../components/ui';
 import { api } from '../../lib/api';
-import { ago } from '../../lib/fa';
+import { ago, fa } from '../../lib/fa';
+import { Link } from 'react-router';
 import { PageHead } from './AdminShell';
 
 /** گزارش‌های نمونه: ستاد فقط گزارش‌هایی را می‌بیند که کنشگر اجازه داده (۳.۵ و ۲.۳) */
@@ -50,6 +51,39 @@ export function AccessLogPage() {
           <tbody>{q.data.map((a) => <tr key={a.id} className="border-t border-line"><td className="px-4 py-2.5 font-semibold text-ink">{a.actor}</td><td className="px-4 py-2.5">{a.label}</td><td className="px-4 py-2.5 text-muted">{a.subject ?? '—'}</td><td className="px-4 py-2.5 text-muted">{ago(a.at)}</td></tr>)}</tbody>
         </table></div>
       ) : <Empty icon={ShieldCheck} title="هنوز چیزی ثبت نشده" />}
+    </div>
+  );
+}
+
+/** جعبه‌ابزار در ستاد: انتشار ابزارها پس از بازبینی متن، و آمار بی‌نام استفاده (۵.۵) */
+interface TStat { id: string; title: string; cat: string; published: boolean; boards: number; filled: number; shared: number }
+export function ToolsAdmin() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const q = useQuery({ queryKey: ['admin-tools'], queryFn: () => api<TStat[]>('/admin/tools') });
+  const toggle = useMutation({
+    mutationFn: (t: TStat) => api(`/admin/tools/${t.id}`, { method: 'PATCH', body: { published: !t.published } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-tools'] }); qc.invalidateQueries({ queryKey: ['tools'] }); toast('ذخیره شد'); },
+    onError: (e) => toast((e as Error).message, 'err'),
+  });
+  const rows = q.data ?? [];
+  return (
+    <div className="rise">
+      <PageHead title="جعبه‌ابزار" desc="هر ابزار پس از بازبینی متن راهنما و نمونهٔ پرشده منتشر می‌شود. آمار بی‌نام است؛ محتوای کارها برای ستاد نمایش داده نمی‌شود." />
+      {q.isLoading ? <Spinner /> : (
+        <div className="card overflow-x-auto"><table className="w-full min-w-[620px] text-sm">
+          <thead className="bg-sunken text-xs text-muted"><tr>{['ابزار', 'کارها', 'پرشده', 'به اشتراک گذاشته', 'وضعیت', ''].map((h) => <th key={h} className="px-4 py-2.5 text-start font-bold">{h}</th>)}</tr></thead>
+          <tbody>{rows.map((t) => (
+            <tr key={t.id} className="border-t border-line">
+              <td className="px-4 py-2.5"><Link to={`/tools/t/${t.id}`} className="font-semibold text-ink">{t.title}</Link></td>
+              <td className="tnum px-4 py-2.5">{fa(t.boards)}</td><td className="tnum px-4 py-2.5">{t.boards ? `٪${fa(Math.round((t.filled / t.boards) * 100))}` : '—'}</td><td className="tnum px-4 py-2.5">{fa(t.shared)}</td>
+              <td className="px-4 py-2.5">{t.published ? <span className="chip chip-leaf">منتشرشده</span> : <span className="chip">منتظر بازبینی</span>}</td>
+              <td className="px-4 py-2.5"><button className="btn btn-ghost btn-sm" onClick={() => toggle.mutate(t)}>{t.published ? 'برداشتن' : 'انتشار'}</button></td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+      )}
+      <p className="hint mt-3">{fa(rows.filter((r) => r.published).length)} از {fa(rows.length)} ابزار منتشر شده است.</p>
     </div>
   );
 }

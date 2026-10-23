@@ -1,4 +1,4 @@
-import { Award, BookOpen, BookOpenCheck, CalendarDays, Compass, House, KeyRound, LayoutDashboard, Landmark, LifeBuoy, Megaphone, Route, ScrollText, ShieldCheck, Users } from 'lucide-react';
+import { Award, BookOpen, BookOpenCheck, CalendarDays, Compass, House, KeyRound, LayoutDashboard, Landmark, LifeBuoy, Megaphone, Route, ScrollText, ShieldCheck, Users, Wrench } from 'lucide-react';
 import { Link, NavLink, Outlet } from 'react-router';
 import { Brand } from '../../components/Shell';
 import { MfaGate } from './MfaGate';
@@ -9,6 +9,7 @@ const SECS = [
   { to: '/admin', label: 'پیشخوان', icon: LayoutDashboard, end: true },
   { to: '/admin/courses', label: 'دوره‌ها', icon: BookOpen },
   { to: '/admin/paths', label: 'مسیرها', icon: Route },
+  { to: '/admin/tools', label: 'جعبه‌ابزار', icon: Wrench },
   { to: '/admin/rahyar', label: 'ساختار راهیاری', icon: Compass },
   { to: '/admin/events', label: 'برنامه‌ها', icon: CalendarDays },
   { to: '/admin/users', label: 'کاربران و نقش‌ها', icon: Users },

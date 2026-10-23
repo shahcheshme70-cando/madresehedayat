@@ -26,6 +26,7 @@ import { Broadcasts, BroadcastsController } from './broadcasts/broadcasts';
 import { Messenger, MessengerController } from './messenger/messenger';
 import { AccessLog, SecurityController } from './security/security';
 import { SupportController } from './support/support';
+import { ToolsController, ToolsService } from './tools/tools';
 import { ConsoleSms, KavenegarSms, SmsSender } from './sms/sms';
 
 @Controller('health')
@@ -46,10 +47,10 @@ class HealthController {
   ],
   controllers: [HealthController, AuthController, GeoController, LearningController, AdminController, FilesController,
     NotificationsController, RahyarController, CoresController, EventsController,
-    MessengerController, SecurityController, BroadcastsController, SupportController],
+    MessengerController, SecurityController, BroadcastsController, SupportController, ToolsController],
   providers: [
     AuthService, LearningService, AdminService, FileStore,
-    Notifier, RahyarService, MissionsService, EventsService, Scheduler, Messenger, AccessLog, Broadcasts,
+    Notifier, RahyarService, MissionsService, EventsService, Scheduler, Messenger, AccessLog, Broadcasts, ToolsService,
     { provide: SmsSender, useClass: config.smsProvider === 'kavenegar' ? KavenegarSms : ConsoleSms },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },

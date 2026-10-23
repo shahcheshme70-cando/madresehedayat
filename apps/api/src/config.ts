@@ -27,6 +27,11 @@ export const config = {
   /** رمز دوم کارکنان ستاد؛ فقط برای توسعه خاموش شود */
   staffMfa: env('STAFF_MFA', 'on') !== 'off',
   baleToken: process.env.BALE_BOT_TOKEN ?? '',
+  /** توکن برنامه در پنل ایتایار و نشانی برنامه در ایتا (مثلاً https://eitaa.com/madrese_app) */
+  eitaaToken: process.env.EITAA_APP_TOKEN ?? '',
+  eitaaAppUrl: process.env.EITAA_APP_URL ?? '',
+  /** lax (پیش‌فرض) یا none — none فقط وقتی لازم است که مدرسه در نسخهٔ وب ایتا (داخل iframe) باز شود */
+  cookieSameSite: (process.env.COOKIE_SAMESITE === 'none' ? 'none' : 'lax') as 'lax' | 'none',
   baleBotUsername: process.env.BALE_BOT_USERNAME ?? '',
   get isDev() { return this.nodeEnv !== 'production'; },
 };

@@ -68,6 +68,9 @@ services:
       STAFF_MFA: ${STAFF_MFA:-on}
       BALE_BOT_TOKEN: ${BALE_BOT_TOKEN:-}
       BALE_BOT_USERNAME: ${BALE_BOT_USERNAME:-}
+      EITAA_APP_TOKEN: ${EITAA_APP_TOKEN:-}
+      EITAA_APP_URL: ${EITAA_APP_URL:-}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
 
   # پشتیبان روزانهٔ پایگاه داده روی همان سرور (۷ روز آخر). برای خاموش کردن: BACKUP_KEEP_DAYS=0
   backup:

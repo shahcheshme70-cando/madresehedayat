@@ -26,7 +26,8 @@ import { CorePage, ImamPage, JoinPage, Messages, MyCores, Notifications, OrgList
 import RahyarTree from './pages/admin/RahyarTree';
 import { AdminSupport, Help, TicketPage } from './pages/Support';
 import { AdminBroadcasts, BroadcastPage } from './pages/Broadcast';
-import { AccessLogPage, Samples } from './pages/admin/Extra';
+import { AccessLogPage, Samples, ToolsAdmin } from './pages/admin/Extra';
+import Toolbox, { BoardPage, PublicBoard, ToolPage } from './pages/Tools';
 import { PathExam } from './pages/Learn';
 import './styles/app.css';
 import { DemoBar } from './demo/DemoBar';
@@ -56,6 +57,7 @@ const router = (import.meta.env.VITE_DEMO ? createHashRouter : createBrowserRout
   { path: '/verify', element: <VerifyPage /> },
   { path: '/verify/:code', element: <VerifyPage /> },
   { path: '/terms', element: <TermsPage /> },
+  { path: '/b/:token', element: <PublicBoard /> },
   {
     element: <RequireAuth><Shell /></RequireAuth>,
     errorElement: <RouteError />,
@@ -65,6 +67,9 @@ const router = (import.meta.env.VITE_DEMO ? createHashRouter : createBrowserRout
       { path: '/paths/:slug', element: <PathPage /> },
       { path: '/paths/:slug/exam', element: <PathExam /> },
       { path: '/help', element: <Help /> },
+      { path: '/tools', element: <Toolbox /> },
+      { path: '/tools/t/:toolId', element: <ToolPage /> },
+      { path: '/tools/boards/:id', element: <BoardPage /> },
       { path: '/support/:id', element: <TicketPage /> },
       { path: '/broadcast', element: <BroadcastPage /> },
       { path: '/courses/:slug', element: <Course /> },
@@ -117,6 +122,7 @@ const router = (import.meta.env.VITE_DEMO ? createHashRouter : createBrowserRout
       { path: 'support/:id', element: <TicketPage admin /> },
       { path: 'broadcasts', element: <AdminBroadcasts /> },
       { path: 'samples', element: <Samples /> },
+      { path: 'tools', element: <ToolsAdmin /> },
       { path: 'security', element: <AccessLogPage /> },
       { path: 'events', element: <ManageEventList /> },
       { path: 'events/new', element: <EventEditor /> },

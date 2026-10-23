@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, type ReactNode } from 'react';
+import { eitaaApp, inEitaa } from './eitaa';
 import { api, ApiError } from './api';
 import type { Me, Role } from './types';
 
@@ -26,6 +27,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     retry: false,
   });
   const me = q.data ?? null;
+  useEffect(() => {
+    if (!me || !inEitaa()) return;
+    try { if (sessionStorage.getItem('mh-eitaa-linked') === me.id) return; } catch { /* */ }
+    eitaaApp().then((w) => w?.initData && api('/auth/eitaa', { body: { initData: w.initData } }).then(() => { try { sessionStorage.setItem('mh-eitaa-linked', me.id); } catch { /* */ } }).catch(() => {}));
+  }, [me?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const has = (...r: Role[]) => !!me && r.some((x) => me.roles.includes(x));
   const value: AuthState = {
     me, loading: q.isLoading, has, isStaff: has('HQ_ADMIN', 'HQ_OPERATOR'),

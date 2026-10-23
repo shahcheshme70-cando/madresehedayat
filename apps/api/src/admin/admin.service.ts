@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { and, asc, count, desc, eq, gt, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import { normalizeMobile } from '../common/mobile';
 import { Db, InjectDb } from '../db/db.module';
+import { toolById } from '../tools/tools';
 import { dec, mobileKey } from '../common/crypto';
 import {
   accessGrants, auditLogs, certificates, counties, courseDependencies, courses, enrollments, lessonProgress, lessons,
@@ -33,6 +34,7 @@ export function validateContent(type: LessonTypeName, c: any): string | null {
     }
     case 'WORKSHEET': return c.prompt && Array.isArray(c.fields) && c.fields.length ? null : 'برگه دست‌کم یک خانه لازم دارد';
     case 'MISSION': return c.goal && Array.isArray(c.steps) ? null : 'هدف مأموریت را بنویسید';
+    case 'TOOL': return c.toolId && toolById(c.toolId) ? null : 'ابزار درس را انتخاب کنید';
     default: return null;
   }
 }

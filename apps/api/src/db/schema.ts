@@ -529,3 +529,52 @@ export const accessLogs = pgTable('access_logs', {
   subjectId: text('subject_id'),
   at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('access_log_at_idx').on(t.at)]);
+
+
+// ═══════════════════════ مرحلهٔ ۳ — جعبه‌ابزار ═══════════════════════
+
+/** وضعیت انتشار هر ابزار؛ متن ابزارها در tools/catalog.json است و ستاد بازبینی و منتشر می‌کند (۵.۱) */
+export const toolStatus = pgTable('tool_status', {
+  toolId: text('tool_id').primaryKey(),
+  published: boolean('published').notNull().default(false),
+  reviewedById: text('reviewed_by_id').references(() => users.id),
+  updatedAt: updatedAt(),
+});
+
+/** «کار»: یک نسخهٔ پرشده از یک ابزار (هر کاربر از هر ابزار چند کار دارد) */
+export const boards = pgTable('boards', {
+  id: id(),
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  toolId: text('tool_id').notNull(),
+  title: text('title').notNull(),
+  data: jsonb('data'), // رمزگذاری‌شده (دادهٔ قرمز)
+  lessonId: text('lesson_id').references(() => lessons.id, { onDelete: 'set null' }),
+  publicToken: text('public_token').unique(), // پیوند عمومی؛ خالی = خاموش
+  updatedById: text('updated_by_id').references(() => users.id),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index('boards_owner_idx').on(t.ownerId, t.updatedAt)]);
+
+export const boardVersions = pgTable('board_versions', {
+  id: id(),
+  boardId: text('board_id').notNull().references(() => boards.id, { onDelete: 'cascade' }),
+  authorId: text('author_id').notNull().references(() => users.id),
+  data: jsonb('data'),
+  createdAt: createdAt(),
+}, (t) => [index('board_versions_idx').on(t.boardId, t.createdAt)]);
+
+/** هم‌کار (ویرایش) یا بیننده (دیدن و نظر) */
+export const boardMembers = pgTable('board_members', {
+  boardId: text('board_id').notNull().references(() => boards.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: text('role').notNull(), // EDITOR | VIEWER
+  createdAt: createdAt(),
+}, (t) => [primaryKey({ columns: [t.boardId, t.userId] })]);
+
+export const boardComments = pgTable('board_comments', {
+  id: id(),
+  boardId: text('board_id').notNull().references(() => boards.id, { onDelete: 'cascade' }),
+  authorId: text('author_id').notNull().references(() => users.id),
+  body: text('body').notNull(), // رمزگذاری‌شده
+  createdAt: createdAt(),
+});

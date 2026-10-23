@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Award, Bell, LifeBuoy, Megaphone, BookOpen, CalendarDays, Compass, House, Landmark, LayoutDashboard, LogOut, MessageCircle, Settings, Building2, UsersRound, CalendarCog } from 'lucide-react';
+import { Wrench, Award, Bell, LifeBuoy, Megaphone, BookOpen, CalendarDays, Compass, House, Landmark, LayoutDashboard, LogOut, MessageCircle, Settings, Building2, UsersRound, CalendarCog } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { api } from '../lib/api';
@@ -9,6 +9,7 @@ import { fa } from '../lib/fa';
 const NAV = [
   { to: '/', label: 'خانه', icon: House, end: true },
   { to: '/learn', label: 'یادگیری', icon: BookOpen },
+  { to: '/tools', label: 'جعبه‌ابزار', short: 'ابزار', icon: Wrench },
   { to: '/events', label: 'برنامه‌ها', icon: CalendarDays },
   { to: '/me', label: 'گواهی‌ها و پیشرفت', short: 'من', icon: Award },
 ];
@@ -95,7 +96,7 @@ export function Shell() {
         </div>
       </header>
       <main className="wrap py-6 md:py-10"><Outlet /></main>
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-card/95 backdrop-blur md:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }} aria-label="بخش‌های اصلی">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line bg-card/95 backdrop-blur md:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }} aria-label="بخش‌های اصلی">
         {NAV.map((x) => (
           <NavLink key={x.to} to={x.to} end={x.end} className={({ isActive }) => `flex flex-col items-center gap-0.5 py-2.5 text-xs font-semibold no-underline ${isActive ? 'text-leaf-ink' : 'text-muted'}`}>
             <x.icon className="size-6" />{x.short ?? x.label}

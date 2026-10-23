@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { CourseIcon, Dialog, ErrorBox, ICONS, LESSON_ICON, Spinner, useToast } from '../../components/ui';
 import { api, ApiError } from '../../lib/api';
+import { useTools } from '../Tools';
 import { fa, LESSON_LABEL, minutes, STATUS_LABEL } from '../../lib/fa';
 import type { LessonType } from '../../lib/types';
 import type { AdminCourse } from './Courses';
@@ -18,7 +19,7 @@ interface FullCourse extends AdminCourse {
 }
 
 const COLORS = [['green', 'سبز'], ['dome', 'فیروزه‌ای'], ['deep', 'آبی'], ['flame', 'زرد'], ['rose', 'سرخ']];
-const TYPES: LessonType[] = ['TEXT', 'VIDEO', 'AUDIO', 'QUIZ', 'WORKSHEET', 'MISSION'];
+const TYPES: LessonType[] = ['TEXT', 'VIDEO', 'AUDIO', 'QUIZ', 'WORKSHEET', 'MISSION', 'TOOL'];
 
 export default function CourseEditor() {
   const { id } = useParams();
@@ -284,8 +285,21 @@ function ContentEditor({ type, c, set }: { type: LessonType; c: any; set: (c: an
       </div>
     );
     case 'QUIZ': return <QuizBuilder c={c} set={set} />;
+    case 'TOOL': return <ToolPick c={c} set={set} />;
     default: return <p className="text-muted">ویرایشگر این نوع درس در مرحلهٔ بعد ساخته می‌شود.</p>;
   }
+}
+
+function ToolPick({ c, set }: { c: any; set: (c: any) => void }) {
+  const tools = useTools(true);
+  return (
+    <div className="grid gap-2">
+      <div className="field"><label htmlFor="tl">ابزار</label>
+        <select id="tl" className="input" value={c.toolId ?? ''} onChange={(e) => set({ ...c, toolId: e.target.value })}><option value="">انتخاب کنید</option>
+          {tools.data?.categories.map((cat) => <optgroup key={cat.id} label={cat.title}>{tools.data!.tools.filter((t) => t.cat === cat.id).map((t) => <option key={t.id} value={t.id}>{t.t}{t.published ? '' : ' (منتشر نشده)'}</option>)}</optgroup>)}</select></div>
+      <p className="hint">کنشگر در این درس یک «کار» تازه از این ابزار پر می‌کند که در «کارهای من» هم می‌ماند؛ با پر کردنش درس تمام می‌شود.</p>
+    </div>
+  );
 }
 
 export function QuizBuilder({ c, set }: { c: any; set: (c: any) => void }) {

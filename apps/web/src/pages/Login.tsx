@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, CircleAlert, KeyRound, ShieldCheck, Smartphone } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { eitaaApp, eitaaContact, inEitaa } from '../lib/eitaa';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -32,6 +33,27 @@ export default function Login() {
   const codeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (me) nav(next, { replace: true }); }, [me, nav, next]);
+  // داخل ایتا: اگر حساب ایتا پیش‌تر وصل شده، بی‌کد وارد می‌شویم
+  const [eitaa, setEitaa] = useState<{ name: string } | null>(null);
+  useEffect(() => {
+    if (!inEitaa()) return;
+    eitaaApp().then(async (w) => {
+      if (!w?.initData) return;
+      try {
+        const r = await api<{ linked: boolean; user?: any; firstName?: string; lastName?: string }>('/auth/eitaa', { body: { initData: w.initData } });
+        if (r.linked && r.user) setMe(r.user); else setEitaa({ name: `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() });
+      } catch { /* ورود معمولی */ }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  async function withEitaaPhone() {
+    setErr(''); setBusy(true);
+    try {
+      const contact = await eitaaContact();
+      if (!contact) { setErr('شماره از ایتا دریافت نشد؛ با کد پیامکی وارد شوید.'); return; }
+      const r = await api<{ needsRegistration: boolean; regToken?: string; user?: any }>('/auth/eitaa/contact', { body: { contact } });
+      if (r.needsRegistration) { setRegToken(r.regToken!); setStep('register'); } else setMe(r.user);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
   useEffect(() => { if (wait <= 0) return; const t = setTimeout(() => setWait((w) => w - 1), 1000); return () => clearTimeout(t); }, [wait]);
 
   async function sendCode(e?: FormEvent) {
@@ -83,7 +105,12 @@ export default function Login() {
                 </div>
                 {err && <p className="err"><CircleAlert className="size-4" />{err}</p>}
               </div>
-              <button className="btn btn-primary btn-lg mt-6 w-full" disabled={busy}>{busy ? 'در حال ارسال…' : 'دریافت کد'}</button>
+              {eitaa && <div className="mt-6 grid gap-2 rounded-2xl bg-leaf-soft p-4">
+                <b className="text-ink">سلام{eitaa.name ? ` ${eitaa.name}` : ''}! از ایتا آمده‌اید.</b>
+                <p className="text-sm text-body">با شمارهٔ حساب ایتایتان، بدون کد پیامکی وارد شوید. یک‌بار که وارد شوید، دفعه‌های بعد خودکار وارد می‌شوید و اعلان‌ها در ایتا هم می‌رسد.</p>
+                <button type="button" className="btn btn-primary" disabled={busy} onClick={withEitaaPhone}>ورود با شمارهٔ ایتا</button>
+              </div>}
+              <button className={`btn btn-lg mt-6 w-full ${eitaa ? 'btn-secondary' : 'btn-primary'}`} disabled={busy}>{busy ? 'در حال ارسال…' : 'دریافت کد'}</button>
               <SsoButton />
               <p className="mt-6 text-center text-sm text-muted">ادامه یعنی پذیرفتن <Link to="/terms" className="font-semibold text-leaf-ink">شرایط استفاده و حریم خصوصی</Link>.</p>
             </form>

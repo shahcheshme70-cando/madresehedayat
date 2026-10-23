@@ -6,14 +6,17 @@ import type { Request, Response } from 'express';
 import { config } from '../config';
 import { dec, enc } from '../common/crypto';
 import { newSecret, otpauthUri, verifyTotp } from '../common/totp';
-import { AuthUser, CurrentUser, Public } from '../common/auth.decorators';
+import { AuthUser, CurrentUser, MaybeUser, Public } from '../common/auth.decorators';
 import { ACCESS_COOKIE } from '../common/auth.guard';
 import { normalizeMobile, toEnDigits } from '../common/mobile';
 import { Db, InjectDb } from '../db/db.module';
-import { coreMemberships, cores, counties, mosques, networks, provinces, roleGrants, users } from '../db/schema';
+import { coreMemberships, cores, counties, messengerLinks, mosques, networks, provinces, roleGrants, users } from '../db/schema';
 import { AuthService } from './auth.service';
+import { JwtService } from '@nestjs/jwt';
+import { contactPhone, eitaaEnabled, eitaaUser, eitaaVerifyOnce, verifyEitaa } from '../eitaa/eitaa';
 
 const REFRESH_COOKIE = 'mh_rt';
+const EITAA_COOKIE = 'mh_eitaa';
 
 class OtpDto { @IsString() mobile: string; }
 class VerifyDto { @IsString() mobile: string; @IsString() @Length(4, 8) code: string; }
@@ -38,10 +41,10 @@ class ProfileDto {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService, @InjectDb() private readonly db: Db) {}
+  constructor(private readonly auth: AuthService, @InjectDb() private readonly db: Db, private readonly jwt: JwtService) {}
 
   private setCookies(res: Response, t: { access: string; refresh: string }) {
-    const base = { httpOnly: true, sameSite: 'lax' as const, secure: config.cookieSecure };
+    const base = { httpOnly: true, sameSite: config.cookieSameSite, secure: config.cookieSecure || config.cookieSameSite === 'none' };
     res.cookie(ACCESS_COOKIE, t.access, { ...base, path: '/', maxAge: config.accessTtlSec * 1000 });
     res.cookie(REFRESH_COOKIE, t.refresh, { ...base, path: '/api/auth', maxAge: config.refreshTtlDays * 86400_000 });
   }
@@ -61,6 +64,7 @@ export class AuthController {
   async verify(@Body() dto: VerifyDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const r = await this.auth.verifyOtp(this.mobileOrThrow(dto.mobile), toEnDigits(dto.code).trim());
     if (r.needsRegistration) return r;
+    await this.linkEitaa(req, res, r.userId);
     this.setCookies(res, await this.auth.issueTokens(r.userId, req.headers['user-agent']));
     return { needsRegistration: false, user: await this.profile(r.userId) };
   }
@@ -69,6 +73,7 @@ export class AuthController {
   async register(@Body() dto: RegisterDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const { regToken, ...input } = dto;
     const userId = await this.auth.register(regToken, input);
+    await this.linkEitaa(req, res, userId);
     this.setCookies(res, await this.auth.issueTokens(userId, req.headers['user-agent']));
     return { user: await this.profile(userId) };
   }
@@ -86,6 +91,64 @@ export class AuthController {
     res.clearCookie(ACCESS_COOKIE, { path: '/' });
     res.clearCookie(REFRESH_COOKIE, { path: '/api/auth' });
     return { ok: true };
+  }
+
+  // ───────── ایتا: ورود از داخل برنامهٔ ایتا ─────────
+
+  /** حساب ایتایی که در همین مرورگر تأیید شده، پس از ورود به حساب مدرسه وصل می‌شود */
+  private async linkEitaa(req: Request, res: Response, userId: string) {
+    const raw = req.cookies?.[EITAA_COOKIE];
+    if (!raw) return;
+    try {
+      const p = this.jwt.verify<{ eid: string; purpose: string }>(raw);
+      if (p.purpose === 'eitaa') {
+        await this.db.delete(messengerLinks).where(and(eq(messengerLinks.provider, 'EITAA'), eq(messengerLinks.chatId, p.eid)));
+        await this.db.insert(messengerLinks).values({ userId, provider: 'EITAA', chatId: p.eid })
+          .onConflictDoUpdate({ target: [messengerLinks.userId, messengerLinks.provider], set: { chatId: p.eid, linkedAt: new Date() } });
+      }
+    } catch { /* منقضی */ }
+    res.clearCookie(EITAA_COOKIE, { path: '/api/auth' });
+  }
+
+  /** initData برنامهٔ ایتا: اگر این حساب ایتا به حسابی وصل است، بی‌کد وارد می‌شود */
+  @Public() @Post('eitaa') @HttpCode(200) @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async eitaa(@MaybeUser() me: AuthUser | undefined, @Body() d: { initData?: string }, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    if (!eitaaEnabled()) throw new BadRequestException({ code: 'eitaa_off', message: 'برنامهٔ ایتا هنوز راه نیفتاده است' });
+    const p = verifyEitaa(String(d.initData ?? ''));
+    const eu = p && eitaaUser(p);
+    if (!eu) throw new BadRequestException({ code: 'eitaa_bad', message: 'اطلاعات ایتا معتبر نیست؛ برنامه را از داخل ایتا دوباره باز کنید' });
+    if (me) {
+      // کسی که در همین‌جا وارد شده: حساب ایتایش را وصل می‌کنیم
+      await this.db.delete(messengerLinks).where(and(eq(messengerLinks.provider, 'EITAA'), eq(messengerLinks.chatId, eu.id)));
+      await this.db.insert(messengerLinks).values({ userId: me.id, provider: 'EITAA', chatId: eu.id })
+        .onConflictDoUpdate({ target: [messengerLinks.userId, messengerLinks.provider], set: { chatId: eu.id, linkedAt: new Date() } });
+      return { linked: true, user: await this.profile(me.id) };
+    }
+    const link = await this.db.query.messengerLinks.findFirst({ where: and(eq(messengerLinks.provider, 'EITAA'), eq(messengerLinks.chatId, eu.id)) });
+    const u = link ? await this.db.query.users.findFirst({ where: eq(users.id, link.userId) }) : undefined;
+    if (u?.isActive) {
+      this.setCookies(res, await this.auth.issueTokens(u.id, req.headers['user-agent']));
+      return { linked: true, user: await this.profile(u.id) };
+    }
+    const base = { httpOnly: true, sameSite: config.cookieSameSite, secure: config.cookieSecure || config.cookieSameSite === 'none', path: '/api/auth', maxAge: 30 * 60_000 };
+    res.cookie(EITAA_COOKIE, this.jwt.sign({ eid: eu.id, purpose: 'eitaa' }, { expiresIn: '30m' }), base);
+    return { linked: false, firstName: eu.firstName, lastName: eu.lastName };
+  }
+
+  /** شمارهٔ تأییدشده از ایتا (requestContact) به‌جای کد پیامکی */
+  @Public() @Post('eitaa/contact') @HttpCode(200) @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async eitaaContact(@Body() d: { contact?: string }, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const p = verifyEitaa(String(d.contact ?? ''), 10 * 60);
+    const phone = p && contactPhone(p);
+    const mobile = phone ? normalizeMobile(phone) : null;
+    if (!mobile) throw new BadRequestException({ code: 'eitaa_contact', message: 'شماره از ایتا دریافت نشد؛ با کد پیامکی وارد شوید' });
+    // ورود بی‌کد فقط اگر سرور ایتا هم این امضا را یک‌بار تأیید کند
+    if (!(await eitaaVerifyOnce(new URLSearchParams(String(d.contact)).get('hash') ?? '', req.ip ?? ''))) throw new BadRequestException({ code: 'eitaa_contact', message: 'تأیید ایتا انجام نشد؛ با کد پیامکی وارد شوید' });
+    const r = await this.auth.loginByVerifiedMobile(mobile);
+    if (r.needsRegistration) return r;
+    await this.linkEitaa(req, res, r.userId);
+    this.setCookies(res, await this.auth.issueTokens(r.userId, req.headers['user-agent']));
+    return { needsRegistration: false, user: await this.profile(r.userId) };
   }
 
   /** «ورود با سامانهٔ پایه» (OAuth2/OIDC) — منتظر اطلاعات اتصال از تیم سامانهٔ پایه */

@@ -19,7 +19,7 @@ export const savedTheme = (): Theme => { try { return (localStorage.getItem('mh-
 function MessengerSection() {
   const { me, setMe } = useAuth();
   const toast = useToast();
-  const q = useQuery({ queryKey: ['messenger'], queryFn: () => api<{ bale: { available: boolean; linked: boolean; botUrl: string | null; botName: string | null }; eitaa: { available: boolean } }>('/me/messenger') });
+  const q = useQuery({ queryKey: ['messenger'], queryFn: () => api<{ bale: { available: boolean; linked: boolean; botUrl: string | null; botName: string | null }; eitaa: { available: boolean; linked: boolean; appUrl: string | null } }>('/me/messenger') });
   const [code, setCode] = useState<string | null>(null);
   const getCode = async () => { try { setCode((await api<{ code: string }>('/me/messenger/bale/code', { method: 'POST' })).code); } catch (e) { toast((e as Error).message, 'err'); } };
   const unlink = async () => { await api('/me/messenger/bale', { method: 'DELETE' }); q.refetch(); toast('اتصال بله قطع شد'); };
@@ -41,7 +41,9 @@ function MessengerSection() {
           <li className="text-muted">کد ۱۵ دقیقه اعتبار دارد. پس از فرستادن، همین‌جا «وصل است» نشان داده می‌شود.</li>
         </ol>
       ) : <button className="btn btn-secondary w-fit" onClick={getCode}>وصل کردن بله</button>}
-      <p className="hint">ایتا: وقتی رابط رسمی ارسال پیام ایتا در دسترس باشد اضافه می‌شود.</p>
+      {q.data?.eitaa.available && (q.data.eitaa.linked
+        ? <div className="flex flex-wrap items-center gap-3"><span className="chip chip-leaf">ایتا وصل است</span><button className="btn btn-ghost btn-sm text-rose" onClick={async () => { await api('/me/messenger/eitaa', { method: 'DELETE' }); q.refetch(); toast('اتصال ایتا قطع شد'); }}>قطع اتصال ایتا</button></div>
+        : <p className="text-sm text-body">برای وصل کردن ایتا، مدرسه را یک‌بار از داخل ایتا باز کنید{q.data.eitaa.appUrl ? <>: <a href={q.data.eitaa.appUrl} target="_blank" rel="noopener" className="font-bold text-leaf-ink">باز کردن در ایتا</a></> : ''} و دکمهٔ «شروع» را بزنید.</p>)}
     </section>
   );
 }

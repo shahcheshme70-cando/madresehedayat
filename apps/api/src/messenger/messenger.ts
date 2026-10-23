@@ -5,6 +5,7 @@ import { config } from '../config';
 import { AuthUser, CurrentUser } from '../common/auth.decorators';
 import { Db, InjectDb } from '../db/db.module';
 import { kv, messengerCodes, messengerLinks, users } from '../db/schema';
+import { eitaaEnabled, eitaaEscape, eitaaSend } from '../eitaa/eitaa';
 
 export interface PushMessage { title: string; body?: string; link?: string }
 
@@ -18,7 +19,7 @@ export interface PushMessage { title: string; body?: string; link?: string }
 @Injectable()
 export class Messenger {
   private readonly log = new Logger('Messenger');
-  private queue: { chatId: string; text: string; link?: string }[] = [];
+  private queue: { provider: string; chatId: string; text: string; link?: string }[] = [];
   private draining = false;
   constructor(@InjectDb() private readonly db: Db) {}
 
@@ -36,12 +37,13 @@ export class Messenger {
 
   /** برای کسانی که بله را وصل کرده‌اند و اعلان پیام‌رسان را خاموش نکرده‌اند */
   async push(userIds: string[], m: PushMessage) {
-    if (!this.baleEnabled || !userIds.length) return;
+    const providers = [...(this.baleEnabled ? ['BALE'] : []), ...(eitaaEnabled() ? ['EITAA'] : [])];
+    if (!providers.length || !userIds.length) return;
     for (let i = 0; i < userIds.length; i += 500) {
-      const rows = await this.db.select({ chatId: messengerLinks.chatId }).from(messengerLinks).innerJoin(users, eq(users.id, messengerLinks.userId))
-        .where(and(inArray(messengerLinks.userId, userIds.slice(i, i + 500)), eq(messengerLinks.provider, 'BALE'), eq(users.notifyMessenger, true)));
+      const rows = await this.db.select({ chatId: messengerLinks.chatId, provider: messengerLinks.provider }).from(messengerLinks).innerJoin(users, eq(users.id, messengerLinks.userId))
+        .where(and(inArray(messengerLinks.userId, userIds.slice(i, i + 500)), inArray(messengerLinks.provider, providers), eq(users.notifyMessenger, true)));
       const text = `${m.title}${m.body ? '\n' + m.body : ''}`;
-      for (const r of rows) this.queue.push({ chatId: r.chatId, text, link: m.link });
+      for (const r of rows) this.queue.push({ provider: r.provider, chatId: r.chatId, text, link: m.link });
     }
     this.drain();
   }
@@ -55,9 +57,10 @@ export class Messenger {
         const m = this.queue.shift()!;
         const url = m.link ? config.publicUrl.replace(/\/$/, '') + m.link : undefined;
         try {
+          if (m.provider === 'EITAA') { await eitaaSend(m.chatId, `**${eitaaEscape(m.text.split('\n')[0])}**${m.text.includes('\n') ? '\n' + eitaaEscape(m.text.split('\n').slice(1).join('\n')) : ''}${url ? `\n\n[باز کردن در مدرسه](${url})` : ''}`); continue; }
           await this.bale('sendMessage', { chat_id: m.chatId, text: m.text, ...(url && url.startsWith('https://') ? { reply_markup: { inline_keyboard: [[{ text: 'باز کردن در مدرسه', url }]] } } : {}) });
-        } catch (e: any) { this.log.warn(`ارسال بله نشد: ${e?.message}`); }
-        await new Promise((r) => setTimeout(r, 50));
+        } catch (e: any) { this.log.warn(`ارسال ${m.provider === 'EITAA' ? 'ایتا' : 'بله'} نشد: ${e?.message}`); }
+        finally { await new Promise((r) => setTimeout(r, 60)); }
       }
     } finally { this.draining = false; }
   }
@@ -104,7 +107,7 @@ export class MessengerController {
     const links = await this.db.select().from(messengerLinks).where(eq(messengerLinks.userId, u.id));
     return {
       bale: { available: this.m.baleEnabled, linked: links.some((l) => l.provider === 'BALE'), botUrl: config.baleBotUsername ? `https://ble.ir/${config.baleBotUsername}` : null, botName: config.baleBotUsername || null },
-      eitaa: { available: false, linked: false },
+      eitaa: { available: eitaaEnabled(), linked: links.some((l) => l.provider === 'EITAA'), appUrl: config.eitaaAppUrl || null },
     };
   }
 
@@ -120,6 +123,12 @@ export class MessengerController {
   @Delete('bale')
   async unlink(@CurrentUser() u: AuthUser) {
     await this.db.delete(messengerLinks).where(and(eq(messengerLinks.userId, u.id), eq(messengerLinks.provider, 'BALE')));
+    return { ok: true };
+  }
+
+  @Delete('eitaa')
+  async unlinkEitaa(@CurrentUser() u: AuthUser) {
+    await this.db.delete(messengerLinks).where(and(eq(messengerLinks.userId, u.id), eq(messengerLinks.provider, 'EITAA')));
     return { ok: true };
   }
 

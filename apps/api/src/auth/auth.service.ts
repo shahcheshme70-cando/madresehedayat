@@ -53,6 +53,14 @@ export class AuthService {
     return { sent: true, resendIn: RESEND_MS / 1000, isNew: !exists, ...(config.isDev && config.smsProvider === 'console' ? { devCode: code } : {}) };
   }
 
+  /** شماره‌ای که منبع مطمئن دیگری (ایتا) تأییدش کرده */
+  async loginByVerifiedMobile(mobile: string) {
+    const user = await this.db.query.users.findFirst({ where: eq(users.mobile, mobileKey(mobile)) });
+    if (!user) return { needsRegistration: true as const, regToken: this.jwt.sign({ mobile, purpose: 'register' }, { expiresIn: '20m' }) };
+    if (!user.isActive) throw new UnauthorizedException({ code: 'inactive', message: 'این حساب غیرفعال است' });
+    return { needsRegistration: false as const, userId: user.id };
+  }
+
   async verifyOtp(mobile: string, code: string) {
     const [otp] = await this.db.select().from(otpRequests)
       .where(and(eq(otpRequests.mobile, mobileKey(mobile)), isNull(otpRequests.usedAt), gt(otpRequests.expiresAt, new Date())))

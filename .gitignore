@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+*.log
+apps/web/public/fonts/*.woff*
+apps/web/public/brand/*
+!apps/web/public/brand/.gitkeep
+!apps/web/public/fonts/.gitkeep
+coverage
+.DS_Store

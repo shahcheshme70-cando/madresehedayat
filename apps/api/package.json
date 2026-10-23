@@ -1,0 +1,40 @@
+{
+  "name": "@madrese/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node dist/db/migrate.js",
+    "seed": "node dist/db/seed.js"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.1.6",
+    "@nestjs/core": "11.1.6",
+    "@nestjs/jwt": "11.0.0",
+    "@nestjs/platform-express": "11.1.6",
+    "@nestjs/throttler": "6.4.0",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.14.2",
+    "cookie-parser": "1.4.7",
+    "helmet": "8.1.0",
+    "ioredis": "5.7.0",
+    "minio": "8.0.5",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "drizzle-orm": "0.45.3",
+    "pg": "8.16.3"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "11.0.10",
+    "@types/cookie-parser": "1.4.9",
+    "@types/express": "5.0.3",
+    "@types/node": "22.18.0",
+    "ts-node": "10.9.2",
+    "typescript": "5.9.2",
+    "drizzle-kit": "0.31.10",
+    "@types/pg": "8.15.5"
+  }
+}

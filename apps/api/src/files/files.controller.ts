@@ -61,12 +61,13 @@ export class FilesController {
     if (!this.store.ready) throw new BadRequestException({ code: 'storage_off', message: 'ذخیره‌ساز فایل در دسترس نیست' });
     if (!file) throw new BadRequestException({ code: 'no_file', message: 'فایلی فرستاده نشد' });
     if (!/^image\/(png|jpeg|webp)$/.test(file.mimetype)) throw new BadRequestException({ code: 'bad_type', message: 'فقط عکس (jpg، png یا webp)' });
-    const main = kind !== 'evidence';
+    const fb = kind === 'feedback'; // عکس صفحه برای بازخورد؛ ۶ ماه
+    const main = kind !== 'evidence' && !fb;
     const ext = file.mimetype === 'image/png' ? 'png' : file.mimetype === 'image/webp' ? 'webp' : 'jpg';
     const key = `${createId()}.${ext}`;
     await this.store.client.putObject(this.store.bucket, key, file.buffer, file.size, { 'Content-Type': file.mimetype });
     const expiresAt = new Date(Date.now() + (main ? 365 : 182) * 86400_000);
-    await this.db.insert(privateFiles).values({ key, ownerId: u.id, kind: main ? 'MISSION_MAIN' : 'MISSION_EVIDENCE', expiresAt });
+    await this.db.insert(privateFiles).values({ key, ownerId: u.id, kind: fb ? 'FEEDBACK' : main ? 'MISSION_MAIN' : 'MISSION_EVIDENCE', expiresAt });
     return { key, expiresAt };
   }
 
@@ -76,7 +77,7 @@ export class FilesController {
     if (!/^[a-z0-9]+\.[a-z0-9]{1,5}$/.test(key)) throw new NotFoundException();
     const priv = await this.db.query.privateFiles.findFirst({ where: eq(privateFiles.key, key) });
     if (priv) {
-      const ok = priv.ownerId === u.id || u.roles.includes('HQ_ADMIN') || (await this.rahyar.canSeeLearner(u.id, priv.ownerId, u.roles));
+      const ok = priv.ownerId === u.id || u.roles.includes('HQ_ADMIN') || (priv.kind === 'FEEDBACK' ? u.roles.includes('HQ_OPERATOR') : await this.rahyar.canSeeLearner(u.id, priv.ownerId, u.roles));
       if (!ok) throw new ForbiddenException({ code: 'forbidden', message: 'این عکس خصوصی است' });
       if (priv.expiresAt < new Date()) throw new NotFoundException({ code: 'expired', message: 'مهلت نگه‌داری این عکس تمام شده' });
     }

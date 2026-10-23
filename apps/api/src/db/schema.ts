@@ -365,7 +365,7 @@ export const missionMessages = pgTable('mission_messages', {
 export const privateFiles = pgTable('private_files', {
   key: text('key').primaryKey(),
   ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  kind: text('kind').notNull(), // MISSION_MAIN | MISSION_EVIDENCE
+  kind: text('kind').notNull(), // MISSION_MAIN | MISSION_EVIDENCE | FEEDBACK
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: createdAt(),
 });
@@ -716,3 +716,49 @@ export const invoices = pgTable('invoices', {
   createdById: text('created_by_id').notNull().references(() => users.id),
   createdAt: createdAt(),
 }, (t) => [index('invoices_network_idx').on(t.networkId)]);
+
+
+// ═══════════════════════ بازخورد ═══════════════════════
+
+/**
+ * بازخورد از هر صفحه: مشکل، پیشنهاد، محتوا، تشکر. متن رمزگذاری‌شده است (ممکن است دادهٔ شخصی داشته باشد).
+ * «بی‌نام» یعنی نام فرستنده به کارکنان نشان داده نمی‌شود؛ خود فرستنده وضعیت و پاسخ را می‌بیند.
+ */
+export const feedback = pgTable('feedback', {
+  id: id(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  anonymous: boolean('anonymous').notNull().default(false),
+  kind: text('kind').notNull(), // BUG | IDEA | CONTENT | PRAISE | OTHER
+  mood: integer('mood'), // ۱ تا ۵، اختیاری
+  body: text('body').notNull(), // رمزگذاری‌شده
+  path: text('path'), // صفحه‌ای که از آن فرستاده شده
+  context: jsonb('context'), // { courseId?, lessonId?, eventId?, boardId? }
+  device: text('device'), // مرورگر و اندازهٔ صفحه، برای گزارش مشکل
+  imageKey: text('image_key'), // عکس صفحه (خصوصی، ۶ ماه)
+  status: text('status').notNull().default('NEW'), // NEW | REVIEWING | PLANNED | DONE | DECLINED
+  tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
+  reply: text('reply'),
+  repliedById: text('replied_by_id').references(() => users.id),
+  repliedAt: timestamp('replied_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index('feedback_status_idx').on(t.status, t.createdAt)]);
+
+/** «این درس به کارتان آمد؟» */
+export const lessonRatings = pgTable('lesson_ratings', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  lessonId: text('lesson_id').notNull().references(() => lessons.id, { onDelete: 'cascade' }),
+  up: boolean('up').notNull(),
+  reasons: text('reasons').array().notNull().default(sql`'{}'::text[]`),
+  comment: text('comment'), // رمزگذاری‌شده
+  updatedAt: updatedAt(),
+}, (t) => [primaryKey({ columns: [t.userId, t.lessonId] })]);
+
+/** امتیاز دوره پس از پایان */
+export const courseRatings = pgTable('course_ratings', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  courseId: text('course_id').notNull().references(() => courses.id, { onDelete: 'cascade' }),
+  stars: integer('stars').notNull(),
+  comment: text('comment'), // رمزگذاری‌شده
+  updatedAt: updatedAt(),
+}, (t) => [primaryKey({ columns: [t.userId, t.courseId] })]);

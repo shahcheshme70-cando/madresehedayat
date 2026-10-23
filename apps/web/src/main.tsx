@@ -28,6 +28,7 @@ import { AdminSupport, Help, TicketPage } from './pages/Support';
 import { AdminBroadcasts, BroadcastPage } from './pages/Broadcast';
 import { AccessLogPage, Samples, ToolsAdmin } from './pages/admin/Extra';
 import { AdminBusiness } from './pages/Business';
+import FeedbackAdmin from './pages/admin/Feedback';
 import Toolbox, { BoardPage, PublicBoard, ToolPage } from './pages/Tools';
 import { PathExam } from './pages/Learn';
 import './styles/app.css';
@@ -112,6 +113,7 @@ const router = (import.meta.env.VITE_DEMO ? createHashRouter : createBrowserRout
       { index: true, element: <Dashboard /> },
       { path: 'courses', element: <Courses /> },
       { path: 'business', element: <AdminBusiness /> },
+      { path: 'feedback', element: <FeedbackAdmin /> },
       { path: 'business/:tab', element: <AdminBusiness /> },
       { path: 'courses/:id', element: <CourseEditor /> },
       { path: 'paths', element: <Paths /> },

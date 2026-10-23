@@ -22,8 +22,8 @@ export interface PlanFeatures {
   certName: 'org-courses' | 'all';
   /** ساخت پویش برای اعضا؛ null = بی‌سقف */
   campaignsPerYear: number | null;
-  /** کلاس زنده روی سرور مدرسه؛ ساعت در ماه، null = بی‌سقف (با ساخت کلاس زنده اعمال می‌شود) */
-  liveHoursPerMonth: number | null;
+  /** کلاس زنده روی سرور مدرسه: 'setting' = سقف ماهانه از تنظیمات ستاد (basicLiveHours)، null = بی‌سقف */
+  liveHoursPerMonth: 'setting' | null;
   /** شبکهٔ راهیاری اختصاصی (به‌صورت خدمت سفارشی راه‌اندازی می‌شود) */
   ownRahyar: boolean;
   /** خروجی اکسل اعضا و پیشرفت */
@@ -39,7 +39,7 @@ export interface PlanFeatures {
 export const PLANS: Record<Plan, PlanFeatures> = {
   ORG_BASIC: {
     label: 'سازمانی پایه', orgCourses: true, orgPanel: true, quarterlyReport: true, broadcast: true, events: true,
-    certName: 'org-courses', campaignsPerYear: 2, liveHoursPerMonth: 4, ownRahyar: false, exportData: false,
+    certName: 'org-courses', campaignsPerYear: 2, liveHoursPerMonth: 'setting', ownRahyar: false, exportData: false,
     prioritySupport: false, onboardingSessions: 1, fixedFee: false,
   },
   ORG_PREMIUM: {
@@ -82,7 +82,7 @@ export const SERVICES: { group: string; items: { name: string; note?: string; v:
   { group: 'برنامه‌ها و کلاس زنده', items: [
     { name: 'ثبت‌نام در برنامه‌ها و کلاس‌ها', v: 'yyyyy' },
     { name: 'برگزاری برنامه', note: 'مسجد و هسته: برای اعضای خود', v: 'nlyyy' },
-    { name: 'کلاس زنده روی سرور مدرسه با ضبط', note: 'پایه: ۴ ساعت در ماه', v: 'nllyy' } ] },
+    { name: 'کلاس زنده روی سرور مدرسه با ضبط', note: 'پایه: {live} ساعت در ماه', v: 'nllyy' } ] },
   { group: 'پویش', items: [
     { name: 'شرکت در پویش و نشان مشارکت', v: 'yyyyy' },
     { name: 'ساخت پویش', note: 'پایه: ۲ پویش در سال، فقط برای اعضا', v: 'nnlyy' } ] },
@@ -108,6 +108,7 @@ export const DEFAULT_COSTS = {
   markup: 1.5, // قیمت هر نفر = هزینهٔ هر کاربر × ۱٫۵
   serviceMarkup: 1.5, // خدمات سفارشی = هزینهٔ واقعی + ۵۰٪
   premiumFixedFee: 0, // هزینهٔ ثابت سالانهٔ پشتیبانی تعهدی بستهٔ ویژه
+  basicLiveHours: 30, // سقف ماهانهٔ کلاس زندهٔ بستهٔ پایه روی سرور مدرسه (ساعت)
 };
 export type Costs = typeof DEFAULT_COSTS;
 

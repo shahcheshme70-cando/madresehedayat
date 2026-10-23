@@ -436,6 +436,7 @@ const COST_FIELDS: [string, string, string, string][] = [
   ['dev', 'برنامه‌نویس', 'تومان در ماه', 'تیم'], ['ops', 'پشتیبانی و عملیات', 'تومان در ماه', 'تیم'], ['content', 'مدیر محتوا', 'تومان در ماه', 'تیم'],
   ['coursesPerYear', 'دورهٔ تازه در سال', 'عدد', 'محتوا'], ['courseCost', 'هزینهٔ ساخت هر دوره', 'تومان', 'محتوا'],
   ['markup', 'ضریب قیمت اشتراک', '× هزینهٔ هر کاربر', 'قیمت'], ['serviceMarkup', 'ضریب خدمات سفارشی', '× هزینهٔ واقعی', 'قیمت'], ['premiumFixedFee', 'هزینهٔ ثابت پشتیبانی تعهدی', 'تومان در سال', 'قیمت'],
+  ['basicLiveHours', 'سقف کلاس زندهٔ بستهٔ پایه', 'ساعت در ماه', 'بسته‌ها'],
 ];
 function Pricing() {
   const q = useQuery({ queryKey: ['biz-pricing'], queryFn: () => api<Pricing>('/admin/business/pricing') });

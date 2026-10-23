@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { randomInt } from 'node:crypto';
 import { Db, InjectDb } from '../db/db.module';
 import { Business } from '../business/business';
+import { FeedbackService } from '../feedback/feedback';
 import { decJson, encJson } from '../common/crypto';
 import {
   accessGrants, certificates, sponsors, coreMemberships, cores, courseDependencies, courses, enrollments, lessonProgress,
@@ -18,7 +19,7 @@ type CourseRow = typeof courses.$inferSelect;
 
 @Injectable()
 export class LearningService {
-  constructor(@InjectDb() private readonly db: Db, private readonly business: Business) {}
+  constructor(@InjectDb() private readonly db: Db, private readonly business: Business, private readonly feedback: FeedbackService) {}
 
   // ───────── دسترسی ─────────
 
@@ -149,6 +150,7 @@ export class LearningService {
     const doneSet = new Set(prog.filter((p) => p.completedAt).map((p) => p.lessonId));
     return {
       ...this.courseCard(c), about: c.about, outcomes: c.outcomes, passScore: c.passScore, missionRule: c.missionRule,
+      rating: await this.feedback.courseScore(c.id, userId),
       sponsor: c.sponsorId ? (await this.db.query.sponsors.findFirst({ where: eq(sponsors.id, c.sponsorId), columns: { name: true } }))?.name ?? null : null,
       dependencies: deps,
       locked: deps.some((d) => d.kind === 'PREREQUISITE' && !d.done),

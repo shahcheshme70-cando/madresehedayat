@@ -90,7 +90,12 @@ export class Business {
   }
   async pricing() {
     const c = await this.costs();
-    return { costs: c, model: priceModel(c), discounts: [{ over: 500, pct: 15 }, { over: 2000, pct: 30 }], plans: PLANS, tiers: TIERS, services: SERVICES };
+    return { costs: c, model: priceModel(c), discounts: [{ over: 500, pct: 15 }, { over: 2000, pct: 30 }], plans: PLANS, tiers: TIERS, services: await this.services() };
+  }
+  /** جدول خدمات با عددهای تنظیم‌شدهٔ ستاد */
+  async services() {
+    const live = (await this.costs()).basicLiveHours.toLocaleString('en-US').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+    return SERVICES.map((g) => ({ ...g, items: g.items.map((i) => ({ ...i, note: i.note?.replace('{live}', live) })) }));
   }
   /** مبلغ قرارداد اشتراک */
   async quote(plan: Plan, seats: number, pricePerSeat?: number, discountPct?: number, fixedFee?: number) {
@@ -529,7 +534,7 @@ export class BusinessController {
   constructor(private readonly b: Business, private readonly access: AccessLog) {}
 
   // همه: جدول بسته‌ها (برای صفحهٔ «بسته‌ها» و پنل سازمان)
-  @Get('plans') plans() { return { tiers: TIERS, services: SERVICES, plans: PLANS }; }
+  @Get('plans') async plans() { return { tiers: TIERS, services: await this.b.services(), plans: PLANS, basicLiveHours: (await this.b.costs()).basicLiveHours }; }
 
   // ───────── ستاد ─────────
   @Get('admin/business/pricing') @Roles('HQ_ADMIN', 'HQ_OPERATOR') pricing() { return this.b.pricing(); }

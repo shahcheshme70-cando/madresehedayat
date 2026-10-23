@@ -39,6 +39,7 @@ export interface PathCard {
 export interface LessonRow { id: string; title: string; type: LessonType; durationSec: number; required: boolean; isFinalQuiz: boolean; done: boolean; best: number | null }
 export interface CourseDetail extends CourseCard {
   about: string | null; outcomes: string[]; passScore: number; missionRule: 'ON_SUBMIT' | 'ON_APPROVAL'; sponsor: string | null;
+  rating: { avg: number | null; count: number; mine: { stars: number; comment: string | null } | null };
   dependencies: { kind: 'PREREQUISITE' | 'COREQUISITE'; course: CourseCard; done: boolean }[];
   locked: boolean;
   modules: { id: string; title: string; lessons: LessonRow[] }[];

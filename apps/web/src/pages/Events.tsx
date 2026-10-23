@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { Dialog, Empty, ErrorBox, Spinner, useToast } from '../components/ui';
+import { useFeedbackContext } from '../components/Feedback';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { fa, jDateTime, jTime, REG_LABEL } from '../lib/fa';
@@ -85,6 +86,7 @@ export function EventPage() {
   const toast = useToast();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['event', id], queryFn: () => api<EventDetail>(`/events/${id}`) });
+  useFeedbackContext({ eventId: id });
   const [ticket, setTicket] = useState(false);
   const [group, setGroup] = useState(false);
   const [askCancel, setAskCancel] = useState(false);

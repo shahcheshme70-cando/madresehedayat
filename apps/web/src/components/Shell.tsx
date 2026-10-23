@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { Wrench, Award, Bell, LifeBuoy, Megaphone, BookOpen, CalendarDays, Compass, House, Landmark, LayoutDashboard, LogOut, MessageCircle, Settings, Building2, UsersRound, CalendarCog } from 'lucide-react';
+import { MessageSquarePlus, Wrench, Award, Bell, LifeBuoy, Megaphone, BookOpen, CalendarDays, Compass, House, Landmark, LayoutDashboard, LogOut, MessageCircle, Settings, Building2, UsersRound, CalendarCog } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { fa } from '../lib/fa';
+import { FeedbackLink, FeedbackProvider, useFeedback } from './Feedback';
 
 const NAV = [
   { to: '/', label: 'خانه', icon: House, end: true },
@@ -64,6 +65,7 @@ export function Shell() {
   const n = unread.data?.count ?? 0;
   const item = 'flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-body no-underline hover:bg-sunken';
   return (
+    <FeedbackProvider>
     <div className="min-h-dvh pb-[calc(76px+env(safe-area-inset-bottom,0px))] md:pb-0">
       <header className="sticky top-0 z-30 border-b border-line bg-bg/85 backdrop-blur" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div className="wrap flex h-16 items-center gap-6">
@@ -90,6 +92,7 @@ export function Shell() {
               <div className="rise absolute end-0 top-14 z-40 w-60 rounded-2xl border border-line bg-card p-2 shadow-lift">
                 {links.map((l) => <Link key={l.to} to={l.to} className={item}><l.icon className="size-4 text-leaf-ink" />{l.label}</Link>)}
                 <hr className="my-1.5 border-line" />
+                <FeedbackMenuItem className={item} onOpen={() => setMenu(false)} />
                 <Link to="/settings" className={item}><Settings className="size-4" />تنظیمات حساب</Link>
                 <button onClick={async () => { await logout(); nav('/login'); }} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-rose hover:bg-sunken"><LogOut className="size-4" />خروج</button>
               </div>
@@ -98,6 +101,7 @@ export function Shell() {
         </div>
       </header>
       <main className="wrap py-6 md:py-10"><Outlet /></main>
+      <FeedbackLink />
       <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line bg-card/95 backdrop-blur md:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }} aria-label="بخش‌های اصلی">
         {NAV.map((x) => (
           <NavLink key={x.to} to={x.to} end={x.end} className={({ isActive }) => `flex flex-col items-center gap-0.5 py-2.5 text-xs font-semibold no-underline ${isActive ? 'text-leaf-ink' : 'text-muted'}`}>
@@ -106,5 +110,11 @@ export function Shell() {
         ))}
       </nav>
     </div>
+    </FeedbackProvider>
   );
+}
+
+function FeedbackMenuItem({ className, onOpen }: { className: string; onOpen: () => void }) {
+  const { open } = useFeedback();
+  return <button className={`${className} w-full`} onClick={() => { onOpen(); open('IDEA'); }}><MessageSquarePlus className="size-4 text-leaf-ink" />ارسال بازخورد</button>;
 }

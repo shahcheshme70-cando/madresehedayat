@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, Award, BookOpen, CircleCheck, Landmark, UserPlus, Users } from 'lucide-react';
+import { MessageSquarePlus, Activity, Award, BookOpen, CircleCheck, Landmark, UserPlus, Users } from 'lucide-react';
 import { Link } from 'react-router';
 import { ErrorBox, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
@@ -16,6 +16,7 @@ interface Stats {
 export default function Dashboard() {
   const { me } = useAuth();
   const q = useQuery({ queryKey: ['admin-stats'], queryFn: () => api<Stats>('/admin/stats') });
+  const fb = useQuery({ queryKey: ['admin-feedback-stats'], queryFn: () => api<{ byStatus: Record<string, number> }>('/admin/feedback/stats') });
   if (q.isLoading) return <Spinner />;
   if (q.error) return <ErrorBox error={q.error} onRetry={() => q.refetch()} />;
   const s = q.data!;
@@ -50,6 +51,7 @@ export default function Dashboard() {
           <h2 className="text-base font-extrabold">وضعیت دوره‌ها</h2>
           <div className="flex flex-wrap gap-2">{Object.entries(STATUS_LABEL).map(([k, t]) => <Link key={k} to="/admin/courses" className="chip">{t}: <b className="tnum">{fa(s.courses[k] ?? 0)}</b></Link>)}</div>
           {(s.courses.REVIEW ?? 0) > 0 && <Link to="/admin/courses" className="flex items-center gap-2 rounded-xl bg-flame-soft p-3 text-sm font-semibold text-flame-ink"><CircleCheck className="size-4" />{fa(s.courses.REVIEW)} دوره منتظر بازبینی و انتشار است</Link>}
+          {(fb.data?.byStatus.NEW ?? 0) > 0 && <Link to="/admin/feedback" className="flex items-center gap-2 rounded-xl bg-leaf-soft p-3 text-sm font-semibold text-leaf-ink"><MessageSquarePlus className="size-4" />{fa(fb.data!.byStatus.NEW)} بازخورد تازه منتظر خواندن است</Link>}
           {s.unverifiedMosques > 0 && <Link to="/admin/mosques" className="flex items-center gap-2 rounded-xl bg-dome-soft p-3 text-sm font-semibold text-dome-ink"><Landmark className="size-4" />{fa(s.unverifiedMosques)} مسجد معرفی‌شده منتظر تأیید است</Link>}
           <Link to="/admin/courses" className="btn btn-primary mt-2 w-fit"><UserPlus className="size-4" />ساخت دورهٔ تازه</Link>
         </section>

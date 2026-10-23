@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Award, Check, CircleCheck, Circle, Clock, Layers, Lock, Play, ShieldCheck } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { CourseIcon, ErrorBox, LESSON_ICON, Progress, Spinner, useToast } from '../components/ui';
+import { CourseRating, Stars, useFeedbackContext } from '../components/Feedback';
 import { api, ApiError } from '../lib/api';
 import { fa, jDate, LESSON_LABEL, minutes } from '../lib/fa';
 import type { CourseDetail } from '../lib/types';
@@ -12,6 +13,7 @@ export default function Course() {
   const toast = useToast();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['course', slug], queryFn: () => api<CourseDetail>(`/courses/${slug}`) });
+  useFeedbackContext(q.data ? { courseId: q.data.id } : null);
   const enroll = useMutation({
     mutationFn: () => api(`/courses/${slug}/enroll`, { method: 'POST' }),
     onSuccess: async () => {
@@ -67,6 +69,7 @@ export default function Course() {
         <div className="grid content-start gap-5">
           {c.level && <span className="text-sm font-bold text-leaf-ink">{c.level}</span>}
           <h1 className="text-[clamp(26px,3.6vw,40px)] font-extrabold">{c.title}</h1>
+          {c.rating.avg != null && <span className="flex items-center gap-2 text-sm text-muted"><Stars value={c.rating.avg} size="size-4" /><b className="text-ink">{fa(String(c.rating.avg).replace('.', '٫'))}</b> از {fa(c.rating.count)} امتیاز</span>}
           {c.about && <p className="prose-fa">{c.about}</p>}
           {c.sponsor && <p className="text-sm text-muted">این دوره با حمایت <b className="font-semibold text-body">{c.sponsor}</b> ساخته شد.</p>}
           {cta}
@@ -111,6 +114,7 @@ export default function Course() {
           ))}
         </div>
       </section>
+      <CourseRating slug={c.slug} mine={c.rating.mine} canRate={!!c.me && (!!c.me.completedAt || all.filter((l) => l.done).length >= 3)} />
       {c.hasCertificate && (
         <p className="flex items-start gap-3 rounded-2xl bg-dome-soft p-4 text-sm text-dome-ink"><ShieldCheck className="size-5 shrink-0" />با تمام کردن درس‌های لازم و قبولی در آزمون پایانی، گواهی این دوره با یک شناسهٔ استعلام صادر می‌شود.</p>
       )}

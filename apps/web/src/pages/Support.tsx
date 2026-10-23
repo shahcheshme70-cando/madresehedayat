@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, CircleHelp, LifeBuoy, Plus } from 'lucide-react';
+import { ChevronDown, CircleHelp, LifeBuoy, MessageSquarePlus, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { Dialog, Empty, ErrorBox, Spinner, useToast } from '../components/ui';
@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { ago, jDate } from '../lib/fa';
 import { Composer } from './Social';
+import { FB_KIND, FB_STATUS, useFeedback } from '../components/Feedback';
 
 export const CATEGORY: Record<string, string> = { LOGIN: 'ورود و حساب', COURSE: 'دوره و آزمون', EVENT: 'برنامه‌ها', TECH: 'مشکل فنی', OTHER: 'دیگر' };
 export const TSTATUS: Record<string, [string, string]> = { OPEN: ['chip-flame', 'منتظر پاسخ'], ANSWERED: ['chip-leaf', 'پاسخ داده شد'], CLOSED: ['', 'بسته'] };
@@ -56,6 +57,7 @@ export function Help() {
         <h2 className="mb-3 font-extrabold">درخواست‌های من</h2>
         {mine.isLoading ? <Spinner /> : mine.data?.length ? <TicketList rows={mine.data} /> : <Empty icon={LifeBuoy} title="درخواستی نفرستاده‌اید" />}
       </section>
+      <MyFeedback />
       <Dialog open={open} onClose={() => setOpen(false)} title="درخواست پشتیبانی">
         <form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); create.mutate(); }}>
           <div className="field"><label htmlFor="cat">موضوع کلی</label><select id="cat" className="input" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{Object.entries(CATEGORY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
@@ -148,5 +150,27 @@ export function AdminSupport() {
       <div className="seg w-fit">{[['', 'باز و پاسخ‌داده'], ['OPEN', 'منتظر پاسخ'], ['CLOSED', 'بسته']].map(([k, t]) => <button key={k} aria-pressed={st === k} onClick={() => setSt(k)}>{t}</button>)}</div>
       {q.isLoading ? <Spinner /> : q.data?.length ? <TicketList rows={q.data} showUser base="/admin/support" /> : <Empty icon={LifeBuoy} title="درخواستی نیست" />}
     </div>
+  );
+}
+
+/** بازخوردهای من: وضعیت و پاسخ تیم (حلقهٔ بازخورد بسته می‌شود) */
+interface MyFb { id: string; kind: string; body: string; status: string; reply: string | null; repliedAt: string | null; anonymous: boolean; createdAt: string }
+function MyFeedback() {
+  const q = useQuery({ queryKey: ['my-feedback'], queryFn: () => api<MyFb[]>('/feedback/mine') });
+  const { open } = useFeedback();
+  return (
+    <section id="feedback" className="scroll-mt-24">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h2 className="font-extrabold">بازخوردهای من</h2>
+        <button className="btn btn-secondary btn-sm" onClick={() => open('IDEA')}><MessageSquarePlus className="size-4" />بازخورد تازه</button></div>
+      <p className="hint mb-3">پیشنهاد، مشکل یا نظرتان دربارهٔ محتوا را بفرستید؛ تیم مدرسه می‌خواند و وضعیتش را همین‌جا می‌بینید. برای مشکلی که فوری کمک می‌خواهد، «درخواست پشتیبانی» بفرستید.</p>
+      {q.isLoading ? <Spinner /> : q.data?.length ? (
+        <ul className="grid gap-2">{q.data.map((f) => (
+          <li key={f.id} className="card grid gap-2 p-4">
+            <div className="flex flex-wrap items-center gap-2 text-sm"><span className="chip">{FB_KIND[f.kind]?.t}</span><span className={`chip ${FB_STATUS[f.status][0]}`}>{FB_STATUS[f.status][1]}</span>{f.anonymous && <span className="text-xs text-muted">بی‌نام</span>}<span className="text-muted">{ago(f.createdAt)}</span></div>
+            <p className="line-clamp-3 text-body">{f.body}</p>
+            {f.reply && <div className="rounded-xl bg-leaf-soft p-3 text-sm"><b className="text-leaf-ink">پاسخ تیم مدرسه: </b><span className="text-ink">{f.reply}</span></div>}
+          </li>))}</ul>
+      ) : <Empty icon={MessageSquarePlus} title="هنوز بازخوردی نفرستاده‌اید" />}
+    </section>
   );
 }

@@ -1,4 +1,4 @@
-import { Award, BadgeDollarSign, BookOpen, BookOpenCheck, CalendarDays, Compass, House, KeyRound, LayoutDashboard, Landmark, LifeBuoy, Megaphone, Route, ScrollText, ShieldCheck, Users, Wrench } from 'lucide-react';
+import { Award, BadgeDollarSign, MessageSquarePlus, BookOpen, BookOpenCheck, CalendarDays, Compass, House, KeyRound, LayoutDashboard, Landmark, LifeBuoy, Megaphone, Route, ScrollText, ShieldCheck, Users, Wrench } from 'lucide-react';
 import { Link, NavLink, Outlet } from 'react-router';
 import { Brand } from '../../components/Shell';
 import { MfaGate } from './MfaGate';
@@ -18,6 +18,7 @@ const SECS = [
   { to: '/admin/certificates', label: 'گواهی‌ها', icon: Award },
   { to: '/admin/mosques', label: 'مساجد', icon: Landmark },
   { to: '/admin/support', label: 'پشتیبانی', icon: LifeBuoy },
+  { to: '/admin/feedback', label: 'بازخورد', icon: MessageSquarePlus },
   { to: '/admin/broadcasts', label: 'پیام گروهی', icon: Megaphone },
   { to: '/admin/samples', label: 'گزارش‌های نمونه', icon: BookOpenCheck },
   { to: '/admin/audit', label: 'گزارش تغییرات', icon: ScrollText, admin: true },

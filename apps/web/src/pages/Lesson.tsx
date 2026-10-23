@@ -3,6 +3,7 @@ import { Award, Camera, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Ci
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { Dialog, ErrorBox, LESSON_ICON, Spinner, useToast } from '../components/ui';
+import { LessonRating, useFeedbackContext } from '../components/Feedback';
 import { api, ApiError } from '../lib/api';
 import { ToolLesson } from './Tools';
 import { fa, jDate, LESSON_LABEL, MISSION_LABEL } from '../lib/fa';
@@ -15,6 +16,7 @@ export default function Lesson() {
   const lesson = useQuery({ queryKey: ['lesson', id], queryFn: () => api<LessonDetail>(`/lessons/${id}`) });
   const course = useQuery({ queryKey: ['course', lesson.data?.course.slug], enabled: !!lesson.data, queryFn: () => api<CourseDetail>(`/courses/${lesson.data!.course.slug}`) });
   const [done, setDone] = useState<Completion | null>(null);
+  useFeedbackContext(lesson.data ? { courseId: lesson.data.course.id, lessonId: lesson.data.id } : null);
 
   if (lesson.isLoading) return <Spinner />;
   if (lesson.error) {
@@ -45,6 +47,7 @@ export default function Lesson() {
             <h1 className="text-[clamp(22px,3vw,30px)] font-extrabold">{l.title}</h1></div>
         </header>
         <LessonBody l={l} onChange={refresh} />
+        {(l.progress?.completedAt || done) && <LessonRating lessonId={l.id} />}
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5">
           {prev ? <Link to={`/lessons/${prev.id}`} className="btn btn-ghost"><ChevronRight className="size-4" />درس قبل</Link> : <span />}
           {next ? <Link to={`/lessons/${next.id}`} className="btn btn-secondary">درس بعد<ChevronLeft className="size-4" /></Link>

@@ -305,7 +305,8 @@ export class AdminService {
 
   // ───────── مساجد ─────────
   async listMosques(onlyUnverified: boolean) {
-    return this.db.select({ id: mosques.id, name: mosques.name, verified: mosques.verified, county: counties.name, province: provinces.name, createdAt: mosques.createdAt })
+    return this.db.select({ id: mosques.id, name: mosques.name, verified: mosques.verified, county: counties.name, province: provinces.name, createdAt: mosques.createdAt,
+      imam: sql<string | null>`(select u.first_name || ' ' || u.last_name from users u where u.id = "mosques"."imam_id")` })
       .from(mosques).innerJoin(counties, eq(counties.id, mosques.countyId)).innerJoin(provinces, eq(provinces.id, counties.provinceId))
       .where(onlyUnverified ? eq(mosques.verified, false) : undefined).orderBy(desc(mosques.createdAt)).limit(300);
   }

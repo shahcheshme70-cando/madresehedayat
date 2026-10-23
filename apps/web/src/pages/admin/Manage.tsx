@@ -172,6 +172,13 @@ export function Grants() {
     onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['admin-grants'] }); toast(`${fa(r.created)} دسترسی ثبت شد`); setMissing(r.missing); if (!r.missing.length) setOpen(false); },
     onError: (e) => toast((e as Error).message, 'err'),
   });
+  const [orgFor, setOrgFor] = useState<Net | null>(null);
+  const [orgMobile, setOrgMobile] = useState('');
+  const setOrgAdmin = useMutation({
+    mutationFn: () => api(`/admin/networks/${orgFor!.id}/admin`, { body: { mobile: orgMobile } }),
+    onSuccess: () => { setOrgFor(null); toast('مدیر سازمان ثبت شد؛ از «پنل سازمان» اعضا را اضافه می‌کند'); },
+    onError: (e) => toast((e as Error).message, 'err'),
+  });
   const [netName, setNetName] = useState('');
   const [under, setUnder] = useState(true);
   const addNet = useMutation({ mutationFn: () => api('/admin/networks', { body: { kind: 'ORGANIZATION', name: netName, underRahyar: under } }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-networks'] }); setNetName(''); toast('سازمان اضافه شد'); } });
@@ -193,12 +200,20 @@ export function Grants() {
       ) : <Empty icon={KeyRound} title="هنوز دسترسی ویژه‌ای ثبت نشده" />}
       <section className="card grid gap-3 p-5">
         <h2 className="text-base font-extrabold">سازمان‌های مشترک</h2>
-        <div className="flex flex-wrap gap-2">{nets.data?.map((n) => <span key={n.id} className="chip">{n.name}{n.kind === 'ORGANIZATION' ? (n.underRahyar ? ' · زیر شبکهٔ راهیاری' : ' · بدون راهیار') : ''}</span>)}</div>
+        <div className="flex flex-wrap gap-2">{nets.data?.map((n) => <span key={n.id} className="chip">{n.name}{n.kind === 'ORGANIZATION' ? (n.underRahyar ? ' · زیر شبکهٔ راهیاری' : ' · بدون راهیار') : ''}
+          {n.kind === 'ORGANIZATION' && has('HQ_ADMIN') && <button className="font-bold text-leaf-ink" onClick={() => { setOrgFor(n); setOrgMobile(''); }}>· مدیر</button>}</span>)}</div>
         {has('HQ_ADMIN') && <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (netName.trim().length >= 2) addNet.mutate(); }}>
           <input className="input h-10 w-56" placeholder="نام سازمان، مثلاً برکت" value={netName} onChange={(e) => setNetName(e.target.value)} />
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={under} onChange={(e) => setUnder(e.target.checked)} />افرادش زیر شبکهٔ راهیاری باشند</label>
           <button className="btn btn-secondary btn-sm h-10">افزودن سازمان</button></form>}
       </section>
+      <Dialog open={!!orgFor} onClose={() => setOrgFor(null)} title={`مدیر سازمان ${orgFor?.name ?? ''}`}>
+        <div className="grid gap-3">
+          <input className="input ltr tnum" dir="ltr" inputMode="tel" placeholder="09…" value={orgMobile} onChange={(e) => setOrgMobile(e.target.value)} aria-label="شمارهٔ همراه مدیر" />
+          <p className="hint">مدیر سازمان پنل خودش را دارد: اعضا را با شماره اضافه می‌کند و فقط پیشرفت دوره‌های همین اشتراک را می‌بیند.</p>
+          <button className="btn btn-primary w-fit" disabled={orgMobile.trim().length < 10 || setOrgAdmin.isPending} onClick={() => setOrgAdmin.mutate()}>ثبت</button>
+        </div>
+      </Dialog>
       <Dialog open={open} onClose={() => setOpen(false)} title="دسترسی تازه">
         <div className="grid gap-4">
           <div className="field"><span className="text-sm font-bold text-ink">دوره‌ها</span>
@@ -247,7 +262,7 @@ export function Certificates() {
 }
 
 /* ───────── مساجد ───────── */
-interface AMosque { id: string; name: string; verified: boolean; county: string; province: string; createdAt: string }
+interface AMosque { id: string; name: string; verified: boolean; county: string; province: string; createdAt: string; imam: string | null }
 interface Province { id: string; name: string; counties: { id: string; name: string }[] }
 export function Mosques() {
   const [onlyNew, setOnlyNew] = useState(false);
@@ -257,6 +272,13 @@ export function Mosques() {
   const toast = useToast();
   const [f, setF] = useState({ name: '', provinceId: '', countyId: '' });
   const counties = geo.data?.find((p) => p.id === f.provinceId)?.counties ?? [];
+  const [imamFor, setImamFor] = useState<AMosque | null>(null);
+  const [imamMobile, setImamMobile] = useState('');
+  const setImam = useMutation({
+    mutationFn: () => api(`/admin/mosques/${imamFor!.id}/imam`, { body: { mobile: imamMobile } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-mosques'] }); setImamFor(null); setImamMobile(''); toast('امام محله ثبت شد'); },
+    onError: (e) => toast((e as Error).message, 'err'),
+  });
   const add = useMutation({ mutationFn: () => api('/admin/mosques', { body: { name: f.name, countyId: f.countyId } }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-mosques'] }); setF({ ...f, name: '' }); toast('مسجد اضافه شد'); } });
   return (
     <div className="rise grid gap-6">
@@ -270,10 +292,18 @@ export function Mosques() {
       <div className="seg w-fit"><button aria-pressed={!onlyNew} onClick={() => setOnlyNew(false)}>همه</button><button aria-pressed={onlyNew} onClick={() => setOnlyNew(true)}>منتظر تأیید</button></div>
       {q.isLoading ? <Spinner /> : q.data?.length ? (
         <div className="card overflow-hidden"><ul>{q.data.map((m) => (
-          <li key={m.id} className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-0"><Landmark className="size-4 text-muted" /><span className="flex-1"><b className="text-ink">{m.name}</b> <span className="text-sm text-muted">· {m.county}، {m.province}</span></span>
+          <li key={m.id} className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-0"><Landmark className="size-4 text-muted" /><span className="flex-1"><b className="text-ink">{m.name}</b> <span className="text-sm text-muted">· {m.county}، {m.province}</span>{m.imam && <span className="block text-xs text-muted">امام محله: {m.imam}</span>}</span>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setImamFor(m); setImamMobile(''); }}>{m.imam ? 'تغییر امام' : 'تعیین امام'}</button>
             {m.verified ? <span className="chip chip-leaf">تأییدشده</span> : <button className="btn btn-secondary btn-sm" onClick={() => api(`/admin/mosques/${m.id}/verify`, { method: 'POST' }).then(() => qc.invalidateQueries({ queryKey: ['admin-mosques'] }))}>تأیید</button>}</li>
         ))}</ul></div>
       ) : <Empty icon={Landmark} title="مسجدی نیست" />}
+      <Dialog open={!!imamFor} onClose={() => setImamFor(null)} title={`امام محلهٔ ${imamFor?.name ?? ''}`}>
+        <div className="grid gap-3">
+          <div className="field"><label htmlFor="im">شمارهٔ همراه امام</label><input id="im" className="input ltr tnum" dir="ltr" inputMode="tel" value={imamMobile} onChange={(e) => setImamMobile(e.target.value)} placeholder="09…" /><span className="hint">باید پیش‌تر در مدرسه ثبت‌نام کرده باشد. امام از «مسجد من» هسته می‌سازد و پیوند دعوت می‌فرستد.</span></div>
+          <div className="flex gap-2"><button className="btn btn-primary" disabled={imamMobile.trim().length < 10 || setImam.isPending} onClick={() => setImam.mutate()}>ثبت</button>
+            {imamFor?.imam && <button className="btn btn-ghost text-rose" onClick={() => api(`/admin/mosques/${imamFor.id}/imam`, { body: {} }).then(() => { qc.invalidateQueries({ queryKey: ['admin-mosques'] }); setImamFor(null); })}>برداشتن امام</button>}</div>
+        </div>
+      </Dialog>
     </div>
   );
 }

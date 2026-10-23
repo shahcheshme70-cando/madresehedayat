@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Award, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, Flag, Lightbulb, RotateCcw, Wrench, XCircle } from 'lucide-react';
+import { Award, Camera, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, Flag, Lightbulb, RotateCcw, Wrench, XCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { Dialog, ErrorBox, LESSON_ICON, Spinner, useToast } from '../components/ui';
 import { api, ApiError } from '../lib/api';
-import { fa, jDate, LESSON_LABEL } from '../lib/fa';
+import { fa, jDate, LESSON_LABEL, MISSION_LABEL } from '../lib/fa';
 import type { Completion, CourseDetail, LessonDetail, QuizQuestion } from '../lib/types';
 
 export default function Lesson() {
@@ -256,33 +256,139 @@ function Worksheet({ l, onChange }: { l: LessonDetail; onChange: (c?: Completion
   );
 }
 
+interface MissionThread {
+  lesson: { id: string; title: string; goal?: string }; course: { id: string; title: string; missionRule: 'ON_SUBMIT' | 'ON_APPROVAL' };
+  data: { status?: string; did?: string; learned?: string; checks?: Record<string, boolean>; mainPhoto?: string; evidence?: string[]; round?: number } | null;
+  messages: { id: string; kind: string; body: string; createdAt: string; authorId: string; firstName: string; lastName: string }[];
+}
+
+const KIND_FA: Record<string, string> = { REPORT: 'گزارش', FEEDBACK: 'بازخورد', REVISE: 'درخواست اصلاح', APPROVE: 'تأیید', REPLY: 'پاسخ' };
+
+/** گفت‌وگوی گزارش مأموریت (مشترک بین کنشگر و راهیار) */
+export function MissionMessages({ messages, learnerId }: { messages: MissionThread['messages']; learnerId: string }) {
+  return (
+    <ol className="grid gap-3">
+      {messages.map((m) => {
+        const mine = m.authorId === learnerId;
+        const tone = m.kind === 'REVISE' ? 'border-flame bg-flame-soft' : m.kind === 'APPROVE' ? 'border-leaf bg-leaf-soft' : mine ? 'border-line bg-card' : 'border-dome bg-dome-soft';
+        return (
+          <li key={m.id} className={`rounded-2xl border-s-4 p-4 ${tone}`}>
+            <div className="mb-1 flex flex-wrap items-center gap-2 text-xs"><b className="text-ink">{m.firstName} {m.lastName}</b><span className="chip h-6">{KIND_FA[m.kind]}</span><span className="text-muted">{jDate(m.createdAt)}</span></div>
+            <p className="whitespace-pre-line leading-8 text-body">{m.body}</p>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+export function PrivatePhoto({ k, alt }: { k: string; alt: string }) {
+  if (import.meta.env.VITE_DEMO || k.startsWith('demo-')) return <div className="grid aspect-[4/3] w-full max-w-xs place-items-center rounded-xl bg-sunken text-sm text-muted">عکس گزارش</div>;
+  return <a href={`/api/files/${k}`} target="_blank" rel="noopener"><img src={`/api/files/${k}`} alt={alt} className="aspect-[4/3] w-full max-w-xs rounded-xl object-cover" loading="lazy" /></a>;
+}
+
+function PhotoPicker({ kind, value, onChange, label }: { kind: 'main' | 'evidence'; value: string[]; onChange: (v: string[]) => void; label: string }) {
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const max = kind === 'main' ? 1 : 4;
+  return (
+    <div className="grid gap-2">
+      <div className="flex flex-wrap gap-2">
+        {value.map((k) => (
+          <div key={k} className="relative w-28"><PrivatePhoto k={k} alt={label} />
+            <button type="button" className="btn btn-secondary btn-icon btn-sm absolute -top-2 -start-2 size-8 rounded-full" aria-label="برداشتن عکس" onClick={() => onChange(value.filter((x) => x !== k))}><XCircle className="size-4" /></button></div>
+        ))}
+        {value.length < max && (
+          <label className={`grid size-28 cursor-pointer place-items-center rounded-xl border-2 border-dashed border-line-strong text-center text-xs text-muted hover:border-leaf ${busy ? 'opacity-60' : ''}`}>
+            {busy ? 'در حال بارگذاری…' : <span className="grid justify-items-center gap-1"><Camera className="size-6" />{label}</span>}
+            <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="sr-only" disabled={busy} onChange={async (e) => {
+              const f = e.target.files?.[0]; if (!f) return;
+              if (f.size > 10 * 1024 * 1024) { toast('عکس باید کمتر از ۱۰ مگابایت باشد', 'err'); return; }
+              setBusy(true);
+              try {
+                if (import.meta.env.VITE_DEMO) onChange([...value, `demo-${Date.now()}`]);
+                else { const fd = new FormData(); fd.append('file', f); const r = await api<{ key: string }>(`/uploads/mission?kind=${kind}`, { form: fd }); onChange([...value, r.key]); }
+              } catch (er) { toast((er as Error).message, 'err'); } finally { setBusy(false); e.target.value = ''; }
+            }} />
+          </label>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Mission({ l, onChange }: { l: LessonDetail; onChange: (c?: Completion | null) => void }) {
-  const d = l.progress?.data ?? {};
-  const [checks, setChecks] = useState<Record<number, boolean>>(d.checks ?? {});
-  const [did, setDid] = useState<string>(d.did ?? '');
-  const [learned, setLearned] = useState<string>(d.learned ?? '');
-  const p = useProgress(l.id, onChange);
-  const status: string | undefined = d.status;
+  const qc = useQueryClient();
+  const toast = useToast();
+  const t = useQuery({ queryKey: ['mission', l.id], queryFn: () => api<MissionThread>(`/missions/${l.id}`) });
+  const d = t.data?.data ?? {};
+  const status = d.status;
+  const editing = !status || status === 'needs_revision';
+  const [checks, setChecks] = useState<Record<string, boolean>>({});
+  const [did, setDid] = useState('');
+  const [learned, setLearned] = useState('');
+  const [main, setMain] = useState<string[]>([]);
+  const [evidence, setEvidence] = useState<string[]>([]);
+  const [reply, setReply] = useState('');
+  useEffect(() => {
+    if (!t.data) return;
+    setChecks(d.checks ?? {}); setDid(d.did ?? ''); setLearned(d.learned ?? '');
+    setMain(d.mainPhoto ? [d.mainPhoto] : []); setEvidence(d.evidence ?? []);
+  }, [t.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const submit = useMutation({
+    mutationFn: () => api<{ status: string; completion: Completion | null }>(`/missions/${l.id}/submit`, { body: { did, learned, checks, mainPhoto: main[0], evidence } }),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['mission', l.id] }); toast(r.status === 'pending' ? 'گزارش برای راهیار فرستاده شد' : 'گزارش فرستاده شد'); onChange(r.completion); },
+    onError: (e) => toast((e as Error).message, 'err'),
+  });
+  const send = useMutation({
+    mutationFn: () => api(`/missions/${l.id}/reply`, { body: { body: reply } }),
+    onSuccess: () => { setReply(''); qc.invalidateQueries({ queryKey: ['mission', l.id] }); },
+    onError: (e) => toast((e as Error).message, 'err'),
+  });
+  if (t.isLoading) return <Spinner />;
+  const steps: string[] = Array.isArray(l.content.steps) ? l.content.steps : [];
+  const chip = status === 'approved' ? 'chip-leaf' : status === 'needs_revision' ? 'chip-flame' : status === 'pending' ? 'chip-dome' : 'chip-leaf';
   return (
     <div className="grid gap-5">
-      <div className="rounded-2xl bg-flame-soft p-5"><b className="flex items-center gap-2 text-flame-ink"><Flag className="size-5" />مأموریت</b><p className="mt-1 text-ink">{l.content.goal}</p></div>
-      {Array.isArray(l.content.steps) && l.content.steps.length > 0 && (
-        <ul className="grid gap-2">{l.content.steps.map((s: string, i: number) => (
+      <div className="rounded-2xl bg-flame-soft p-5"><b className="flex items-center gap-2 text-flame-ink"><Flag className="size-5" />مأموریت</b><p className="mt-1 text-ink">{l.content.goal}</p>
+        {t.data?.course.missionRule === 'ON_APPROVAL' && <p className="mt-2 text-sm text-body">این مأموریت با تأیید راهیار تمام می‌شود.</p>}</div>
+      {status && <div className="flex flex-wrap items-center gap-2"><span className={`chip ${chip}`}>{MISSION_LABEL[status]}</span>{(d.round ?? 0) > 1 && <span className="hint">نوبت {fa(d.round!)}</span>}</div>}
+      {status === 'needs_revision' && <p className="flex gap-2 rounded-xl bg-flame-soft p-3 text-sm text-ink"><CircleAlert className="size-4 shrink-0 text-flame-ink" />راهیارتان خواسته گزارش را کامل‌تر کنید. پیامش را پایین ببینید، گزارش را اصلاح کنید و دوباره بفرستید.</p>}
+
+      {steps.length > 0 && (
+        <ul className="grid gap-2">{steps.map((s, i) => (
           <li key={i}><label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line px-4 py-3">
-            <input type="checkbox" className="size-5 accent-[var(--leaf)]" checked={!!checks[i]} onChange={(e) => setChecks((c) => ({ ...c, [i]: e.target.checked }))} disabled={!!status} /><span>{s}</span></label></li>
+            <input type="checkbox" className="size-5 accent-[var(--leaf)]" checked={!!checks[i]} onChange={(e) => setChecks((c) => ({ ...c, [i]: e.target.checked }))} disabled={!editing} /><span>{s}</span></label></li>
         ))}</ul>
       )}
-      {status ? (
-        <div className="card grid gap-2 p-5">
-          <b className="text-ink">گزارش شما</b><p><b>چه کردید: </b>{d.did}</p>{d.learned && <p><b>چه یاد گرفتید: </b>{d.learned}</p>}
-          <span className={`chip w-fit ${status === 'submitted' ? 'chip-leaf' : 'chip-flame'}`}>{status === 'submitted' ? 'فرستاده شد' : 'در انتظار تأیید راهیار'}</span>
+
+      {editing ? (
+        <div className="grid gap-4">
+          <div className="field"><label htmlFor="did">چه کردید؟</label><textarea id="did" className="input min-h-28" placeholder="با چه کسی، کجا، چطور" value={did} onChange={(e) => setDid(e.target.value)} /></div>
+          <div className="field"><label htmlFor="lr">چه چیزی یاد گرفتید یا شما را غافلگیر کرد؟</label><textarea id="lr" className="input" value={learned} onChange={(e) => setLearned(e.target.value)} /></div>
+          <div className="field"><label>عکس <span className="font-normal text-muted">(اختیاری)</span></label>
+            <div className="flex flex-wrap gap-6"><PhotoPicker kind="main" value={main} onChange={setMain} label="عکس اصلی" /><PhotoPicker kind="evidence" value={evidence} onChange={setEvidence} label="عکس شاهد" /></div>
+            <span className="hint">فقط خودتان و راهیارتان عکس‌ها را می‌بینید. عکس اصلی یک سال و عکس‌های شاهد شش ماه نگه داشته می‌شوند. از افراد فقط با اجازهٔ خودشان عکس بگیرید.</span></div>
+          <div><button className="btn btn-primary" disabled={did.trim().length < 10 || submit.isPending} onClick={() => submit.mutate()}>{status === 'needs_revision' ? 'فرستادن گزارش اصلاح‌شده' : 'فرستادن گزارش'}</button></div>
         </div>
       ) : (
-        <div className="grid gap-4">
-          <div className="field"><label htmlFor="did">چه کردید؟</label><textarea id="did" className="input" placeholder="با چه کسی، کجا، چطور" value={did} onChange={(e) => setDid(e.target.value)} /></div>
-          <div className="field"><label htmlFor="lr">چه چیزی یاد گرفتید یا شما را غافلگیر کرد؟</label><textarea id="lr" className="input" value={learned} onChange={(e) => setLearned(e.target.value)} /></div>
-          <p className="hint">عکس افراد را فقط با اجازهٔ خودشان بفرستید. بارگذاری عکس در مرحلهٔ بعد اضافه می‌شود.</p>
-          <div><button className="btn btn-primary" disabled={did.trim().length < 10 || p.isPending} onClick={() => p.mutate({ completed: true, data: { checks, did, learned } })}>فرستادن گزارش</button></div>
+        <div className="card grid gap-3 p-5">
+          <b className="text-ink">گزارش شما</b><p className="whitespace-pre-line"><b>چه کردید: </b>{d.did}</p>{d.learned && <p className="whitespace-pre-line"><b>چه یاد گرفتید: </b>{d.learned}</p>}
+          {(d.mainPhoto || d.evidence?.length) ? <div className="flex flex-wrap gap-2">{[d.mainPhoto, ...(d.evidence ?? [])].filter(Boolean).map((k) => <div key={k} className="w-32"><PrivatePhoto k={k!} alt="عکس گزارش" /></div>)}</div> : null}
+        </div>
+      )}
+
+      {(t.data?.messages.length ?? 0) > 1 && (
+        <section className="grid gap-3">
+          <h3 className="font-extrabold">گفت‌وگو با راهیار</h3>
+          <MissionMessages messages={t.data!.messages} learnerId={t.data!.messages[0].authorId} />
+        </section>
+      )}
+      {status && status !== 'approved' && !editing && (
+        <div className="grid gap-2">
+          <label htmlFor="rep" className="text-sm font-bold text-ink">نکته‌ای برای راهیار</label>
+          <textarea id="rep" className="input" value={reply} onChange={(e) => setReply(e.target.value)} placeholder="اگر پرسشی دارید یا چیزی را جا انداختید" />
+          <button className="btn btn-secondary btn-sm w-fit" disabled={!reply.trim() || send.isPending} onClick={() => send.mutate()}>فرستادن</button>
         </div>
       )}
     </div>

@@ -197,7 +197,9 @@ export class RahyarController {
   @Get('rahyar/tree')
   async tree(@CurrentUser() u: AuthUser, @Query('gender') g: 'MALE' | 'FEMALE' = 'MALE') {
     if (!u.roles.includes('HQ_ADMIN') && !u.roles.includes('HQ_OPERATOR')) await this.requireRahyar(u);
-    return this.rahyar.tree(g === 'FEMALE' ? 'FEMALE' : 'MALE');
+    const t = await this.rahyar.tree(g === 'FEMALE' ? 'FEMALE' : 'MALE');
+    // شمارهٔ همراه فقط برای مدیر ستاد (برای گماشتن)؛ دیگران فقط نام می‌بینند
+    return u.roles.includes('HQ_ADMIN') ? t : t.map((p) => ({ ...p, holder: p.holder ? { ...p.holder, mobile: null } : null }));
   }
 
   @Post('rahyar/positions')

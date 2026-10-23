@@ -6,7 +6,21 @@ export interface Me {
   hasNationalId: boolean; county: { id: string; name: string; province: string } | null;
   mosque: { id: string; name: string } | null; nearMosque: string | null; roles: Role[];
   cores: { id: string; name: string; isLeader: boolean }[]; ssoLinked: boolean;
+  imamOf: { id: string; name: string }[]; orgs: { id: string; name: string }[]; allowRahyarMessages: boolean;
 }
+
+export type RegStatus = 'REGISTERED' | 'WAITLIST' | 'PENDING' | 'REJECTED' | 'CANCELLED';
+export interface EventCard {
+  id: string; title: string; kind: 'ONLINE' | 'IN_PERSON'; startsAt: string; endsAt: string; location: string | null; hostName: string | null;
+  capacity: number | null; seatsLeft: number | null; waitlist: boolean; requiresApproval: boolean; registrationDeadline: string | null;
+  audienceGender: 'MALE' | 'FEMALE' | null; status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED'; cancelReason: string | null; registered: number;
+  my: { status: RegStatus; checkInCode?: string | null; attendedAt?: string | null; feedback?: { rating: number; comment?: string } | null } | null;
+}
+export interface EventDetail extends EventCard {
+  description: string | null; agenda: string | null; bring: string | null; mapUrl: string | null; onlineUrl: string | null; onlineSoon: boolean;
+  blockedReason: string | null; canManage: boolean; ledCores: { id: string; name: string }[];
+}
+export interface Notice { id: string; kind: string; title: string; body: string | null; link: string | null; readAt: string | null; createdAt: string }
 
 export interface MyState { enrolledAt: string; completedAt: string | null; archived: boolean; percent: number; lastLessonId: string | null }
 

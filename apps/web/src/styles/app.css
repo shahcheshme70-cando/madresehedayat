@@ -144,3 +144,6 @@ select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 .tint-sky, .tint-dome { --t: var(--dome); --t-soft: var(--dome-soft); --t-ink: var(--dome-ink); }
 .tint-rose { --t: var(--rose); --t-soft: var(--rose-soft); --t-ink: var(--rose); }
 .cover { background: radial-gradient(120% 120% at 100% 0%, color-mix(in srgb, var(--t) 22%, var(--t-soft)) 0%, var(--t-soft) 60%); color: var(--t-ink); }
+
+/* فرزندان grid از پهنای ستون بیرون نزنند (جدول‌ها و پیوندهای بلند داخل ظرف اسکرول خودشان می‌مانند) */
+:where(.grid) > * { min-width: 0; }

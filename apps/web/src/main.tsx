@@ -19,6 +19,11 @@ import Login from './pages/Login';
 import Me from './pages/Me';
 import { NotFound, RouteError, TermsPage, VerifyPage } from './pages/Public';
 import Settings, { applyTheme, savedTheme } from './pages/Settings';
+import Events, { EventPage } from './pages/Events';
+import { CheckIn, EventEditor, ManageEvent, ManageEventList } from './pages/ManageEvents';
+import { RahyarAssign, RahyarConversation, RahyarHome, RahyarLearner, RahyarLearners, RahyarMessages, RahyarReport, RahyarReports } from './pages/Rahyar';
+import { CorePage, ImamPage, JoinPage, Messages, MyCores, Notifications, OrgList, OrgPage } from './pages/Social';
+import RahyarTree from './pages/admin/RahyarTree';
 import './styles/app.css';
 import { DemoBar } from './demo/DemoBar';
 
@@ -58,6 +63,30 @@ const router = (import.meta.env.VITE_DEMO ? createHashRouter : createBrowserRout
       { path: '/lessons/:id', element: <Lesson /> },
       { path: '/me', element: <Me /> },
       { path: '/settings', element: <Settings /> },
+      { path: '/events', element: <Events /> },
+      { path: '/events/:id', element: <EventPage /> },
+      { path: '/notifications', element: <Notifications /> },
+      { path: '/messages', element: <Messages /> },
+      { path: '/cores', element: <MyCores /> },
+      { path: '/cores/:id', element: <CorePage /> },
+      { path: '/join/:code', element: <JoinPage /> },
+      { path: '/imam', element: <ImamPage /> },
+      { path: '/org', element: <OrgList /> },
+      { path: '/org/:id', element: <OrgPage /> },
+      { path: '/rahyar', element: <RahyarHome /> },
+      { path: '/rahyar/reports', element: <RahyarReports /> },
+      { path: '/rahyar/reports/:learnerId/:lessonId', element: <RahyarReport /> },
+      { path: '/rahyar/learners', element: <RahyarLearners /> },
+      { path: '/rahyar/learners/:id', element: <RahyarLearner /> },
+      { path: '/rahyar/messages', element: <RahyarMessages /> },
+      { path: '/rahyar/messages/:learnerId', element: <RahyarConversation /> },
+      { path: '/rahyar/assign', element: <RahyarAssign /> },
+      { path: '/rahyar/tree', element: <RahyarTree /> },
+      { path: '/manage/events', element: <ManageEventList /> },
+      { path: '/manage/events/new', element: <EventEditor /> },
+      { path: '/manage/events/:id', element: <ManageEvent /> },
+      { path: '/manage/events/:id/edit', element: <EventEditor /> },
+      { path: '/manage/events/:id/checkin', element: <CheckIn /> },
       { path: '*', element: <NotFound /> },
     ],
   },
@@ -75,6 +104,12 @@ const router = (import.meta.env.VITE_DEMO ? createHashRouter : createBrowserRout
       { path: 'certificates', element: <Certificates /> },
       { path: 'mosques', element: <Mosques /> },
       { path: 'audit', element: <Audit /> },
+      { path: 'rahyar', element: <RahyarTree /> },
+      { path: 'events', element: <ManageEventList /> },
+      { path: 'events/new', element: <EventEditor /> },
+      { path: 'events/:id', element: <ManageEvent /> },
+      { path: 'events/:id/edit', element: <EventEditor /> },
+      { path: 'events/:id/checkin', element: <CheckIn /> },
       { path: '*', element: <NotFound /> },
     ],
   },

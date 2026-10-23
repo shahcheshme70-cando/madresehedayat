@@ -1,4 +1,4 @@
-import { Award, BookOpen, House, KeyRound, LayoutDashboard, Landmark, Route, ScrollText, Users } from 'lucide-react';
+import { Award, BookOpen, CalendarDays, Compass, House, KeyRound, LayoutDashboard, Landmark, Route, ScrollText, Users } from 'lucide-react';
 import { Link, NavLink, Outlet } from 'react-router';
 import { Brand } from '../../components/Shell';
 import { useAuth } from '../../lib/auth';
@@ -8,6 +8,8 @@ const SECS = [
   { to: '/admin', label: 'پیشخوان', icon: LayoutDashboard, end: true },
   { to: '/admin/courses', label: 'دوره‌ها', icon: BookOpen },
   { to: '/admin/paths', label: 'مسیرها', icon: Route },
+  { to: '/admin/rahyar', label: 'ساختار راهیاری', icon: Compass },
+  { to: '/admin/events', label: 'برنامه‌ها', icon: CalendarDays },
   { to: '/admin/users', label: 'کاربران و نقش‌ها', icon: Users },
   { to: '/admin/grants', label: 'دسترسی ویژه', icon: KeyRound },
   { to: '/admin/certificates', label: 'گواهی‌ها', icon: Award },

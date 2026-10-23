@@ -31,3 +31,8 @@ export const ROLE_LABEL: Record<string, string> = {
   HQ_ADMIN: 'مدیر ستاد', HQ_OPERATOR: 'اپراتور محتوا', INSTRUCTOR: 'مدرس', RAHYAR: 'راهیار', IMAM: 'امام محله', ORG_ADMIN: 'مدیر سازمان',
 };
 export const STATUS_LABEL: Record<string, string> = { DRAFT: 'پیش‌نویس', REVIEW: 'در انتظار بازبینی', PUBLISHED: 'منتشرشده', ARCHIVED: 'بایگانی' };
+
+export const jDateTime = (v: string | Date) => jf(new Date(v), { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+export const jTime = (v: string | Date) => jf(new Date(v), { hour: '2-digit', minute: '2-digit' });
+export const REG_LABEL: Record<string, string> = { REGISTERED: 'ثبت‌نام شده', WAITLIST: 'فهرست انتظار', PENDING: 'منتظر تأیید', REJECTED: 'پذیرفته نشد', CANCELLED: 'انصراف' };
+export const MISSION_LABEL: Record<string, string> = { submitted: 'فرستاده شد', pending: 'منتظر تأیید راهیار', needs_revision: 'نیاز به اصلاح', approved: 'تأیید شد' };

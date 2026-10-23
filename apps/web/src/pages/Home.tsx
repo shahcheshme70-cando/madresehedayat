@@ -6,7 +6,8 @@ import { CourseIcon, Empty, ErrorBox, Spinner } from '../components/ui';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { fa } from '../lib/fa';
-import type { CourseCard as C, PathCard } from '../lib/types';
+import type { CourseCard as C, EventCard, PathCard } from '../lib/types';
+import { EventRow } from './Events';
 
 function greet() {
   const h = new Date().getHours();
@@ -18,6 +19,7 @@ export default function Home() {
   const mine = useQuery({ queryKey: ['my-courses'], queryFn: () => api<C[]>('/me/courses') });
   const paths = useQuery({ queryKey: ['paths'], queryFn: () => api<PathCard[]>('/paths') });
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: () => api<C[]>('/courses') });
+  const events = useQuery({ queryKey: ['events', 'upcoming'], queryFn: () => api<EventCard[]>('/events?scope=upcoming') });
   if (mine.isLoading) return <Spinner />;
   if (mine.error) return <ErrorBox error={mine.error} onRetry={() => mine.refetch()} />;
   const active = (mine.data ?? []).filter((c) => !c.me?.completedAt && !c.me?.archived);
@@ -50,6 +52,13 @@ export default function Home() {
           <h2 className="text-xl font-extrabold">{doneCount ? 'دورهٔ بعدی‌تان را انتخاب کنید' : 'از کجا شروع کنم؟'}</h2>
           <p className="max-w-xl text-muted">{doneCount ? `تا امروز ${fa(doneCount)} دوره را تمام کرده‌اید. یک مسیر را ادامه دهید یا دورهٔ تازه‌ای بردارید.` : 'یک مسیر را باز کنید و اولین دوره‌اش را شروع کنید. هر دوره چند درس کوتاه دارد و آخرش گواهی می‌گیرید.'}</p>
           <div><Link to="/learn" className="btn btn-primary">دیدن دوره‌ها<ChevronLeft className="size-4" /></Link></div>
+        </section>
+      )}
+
+      {(events.data?.length ?? 0) > 0 && (
+        <section>
+          <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-extrabold">برنامه‌های پیش رو</h2><Link to="/events" className="text-sm font-bold text-leaf-ink">همه</Link></div>
+          <div className="grid gap-3 lg:grid-cols-2">{events.data!.slice(0, 2).map((e) => <EventRow key={e.id} e={e} />)}</div>
         </section>
       )}
 

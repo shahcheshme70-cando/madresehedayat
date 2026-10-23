@@ -73,6 +73,17 @@ export default function Settings() {
       </section>
 
       <section className="card grid gap-3 p-6">
+        <h2 className="text-lg font-extrabold">پیام راهیار</h2>
+        <label className="flex cursor-pointer items-start gap-3">
+          <input type="checkbox" className="mt-1 size-5 accent-[var(--leaf)]" checked={me!.allowRahyarMessages} onChange={async (e) => {
+            const v = e.target.checked;
+            try { await api('/me/prefs', { method: 'PATCH', body: { allowRahyarMessages: v } }); setMe({ ...me!, allowRahyarMessages: v }); toast(v ? 'راهیار می‌تواند به شما پیام بدهد' : 'پیام راهیار خاموش شد'); } catch (er) { toast((er as Error).message, 'err'); }
+          }} />
+          <span><b className="block text-ink">راهیارم بتواند به من پیام بدهد</b><span className="text-sm text-muted">شمارهٔ همراه شما در هیچ حالتی به راهیار نشان داده نمی‌شود. اگر خاموش باشد، راهیار فقط به پیام‌هایی که خودتان می‌فرستید پاسخ می‌دهد. بازخورد گزارش مأموریت‌ها همیشه می‌رسد.</span></span>
+        </label>
+      </section>
+
+      <section className="card grid gap-3 p-6">
         <h2 className="text-lg font-extrabold">نمایش</h2>
         <div className="seg w-fit" role="group" aria-label="پوسته">
           {([['system', 'خودکار', SunMoon], ['light', 'روشن', Sun], ['dark', 'تیره', Moon]] as [Theme, string, any][]).map(([k, t, I]) => (

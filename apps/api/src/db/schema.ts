@@ -578,3 +578,57 @@ export const boardComments = pgTable('board_comments', {
   body: text('body').notNull(), // رمزگذاری‌شده
   createdAt: createdAt(),
 });
+
+
+// ═══════════════════════ مرحلهٔ ۳ — پویش ═══════════════════════
+// حرکت جمعیِ زمان‌دار با مأموریت‌های کوتاه؛ بدون رتبه‌بندی افراد — فقط شمار جمعی، نقشهٔ استان‌ها و نشان مشارکت
+
+export const campaigns = pgTable('campaigns', {
+  id: id(),
+  title: text('title').notNull(),
+  summary: text('summary').notNull(),
+  body: text('body'),
+  scope: text('scope').notNull(), // NATIONAL | PROVINCE
+  provinceId: text('province_id').references(() => provinces.id),
+  goal: integer('goal'), // هدف جمعی: شمار کارهای انجام‌شده
+  startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+  endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
+  status: text('status').notNull().default('DRAFT'), // DRAFT | PUBLISHED | CANCELLED
+  createdById: text('created_by_id').notNull().references(() => users.id),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index('campaigns_time_idx').on(t.status, t.endsAt)]);
+
+export const campaignTasks = pgTable('campaign_tasks', {
+  id: id(),
+  campaignId: text('campaign_id').notNull().references(() => campaigns.id, { onDelete: 'cascade' }),
+  order: integer('order').notNull(),
+  title: text('title').notNull(),
+  body: text('body'),
+});
+
+/** پیوستن هسته: مسئول هسته همهٔ اعضا را می‌آورد */
+export const campaignCores = pgTable('campaign_cores', {
+  campaignId: text('campaign_id').notNull().references(() => campaigns.id, { onDelete: 'cascade' }),
+  coreId: text('core_id').notNull().references(() => cores.id, { onDelete: 'cascade' }),
+  joinedById: text('joined_by_id').notNull().references(() => users.id),
+  joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.campaignId, t.coreId] })]);
+
+export const campaignMembers = pgTable('campaign_members', {
+  campaignId: text('campaign_id').notNull().references(() => campaigns.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  coreId: text('core_id').references(() => cores.id, { onDelete: 'set null' }), // اگر با هسته آمده
+  provinceId: text('province_id').references(() => provinces.id), // برای نقشهٔ مشارکت
+  joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.campaignId, t.userId] })]);
+
+/** انجام یک کار پویش؛ یادداشت فقط برای خود کنشگر است (رمزگذاری‌شده، ستاد نمی‌بیند) */
+export const campaignDone = pgTable('campaign_done', {
+  taskId: text('task_id').notNull().references(() => campaignTasks.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  campaignId: text('campaign_id').notNull().references(() => campaigns.id, { onDelete: 'cascade' }),
+  provinceId: text('province_id').references(() => provinces.id),
+  note: text('note'),
+  doneAt: timestamp('done_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.taskId, t.userId] }), index('campaign_done_idx').on(t.campaignId)]);

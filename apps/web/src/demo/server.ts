@@ -4,6 +4,7 @@
  * فقط در ساخت نمایشی (VITE_DEMO=1) به کار می‌رود.
  */
 import seed from './seed.json';
+import { registerPhase3, seedPhase3 } from './phase3';
 
 type Any = any;
 export class DemoError extends Error {
@@ -11,7 +12,7 @@ export class DemoError extends Error {
 }
 const E = (status: number, code: string, message: string, data: Any = {}) => new DemoError(status, code, message, data);
 
-const KEY = 'mh-demo-v2';
+const KEY = 'mh-demo-v3';
 const DEMO_CODE = '12345';
 export const DEMO_ADMIN = '09120000000';
 const now = () => new Date().toISOString();
@@ -25,6 +26,7 @@ interface DB {
   courses: Any[]; modules: Any[]; lessons: Any[]; deps: Any[]; paths: Any[]; pathItems: Any[];
   enrollments: Any[]; progress: Any[]; attempts: Any[]; certificates: Any[]; grants: Any[]; audit: Any[]; otpMobile: string | null;
   positions: Any[]; regionProv: Any[]; assigns: Any[]; mmsgs: Any[]; dms: Any[]; notifs: Any[]; cores: Any[]; coreMembers: Any[]; netMembers: Any[]; events: Any[]; regs: Any[];
+  [k: string]: Any; // مرحلهٔ ۳ (phase3.ts)
 }
 
 function fresh(): DB {
@@ -50,6 +52,7 @@ function fresh(): DB {
     if (i === 0) db.certificates.push({ id: rid(), code: 'HD-7K2Q-9MXA', userId: id, courseId: nj1.id, holderName: `${f} ${l}`, courseTitle: nj1.title, score: 100, issuedAt: t, revokedAt: null });
   });
   seedPhase2(db, kashan, mosque, nj1);
+  seedPhase3(db);
   return db;
 }
 
@@ -148,7 +151,7 @@ const prog = (uid: string, lid: string) => DBV.progress.find((p) => p.userId ===
 const granted = (uid?: string) => {
   if (!uid) return new Set<string>();
   const nets = new Set([...DBV.roles.filter((r) => r.userId === uid && r.networkId).map((r) => r.networkId), ...DBV.netMembers.filter((x) => x.userId === uid).map((x) => x.networkId)]);
-  return new Set(DBV.grants.filter((g) => (g.userId === uid || (g.networkId && nets.has(g.networkId))) && (!g.expiresAt || g.expiresAt > now())).map((g) => g.courseId));
+  return new Set([...DBV.grants.filter((g) => (g.userId === uid || (g.networkId && nets.has(g.networkId))) && (!g.expiresAt || g.expiresAt > now())).map((g) => g.courseId), ...HOOK.subscribedCourseIds(uid)]);
 };
 const canSee = (c: Any, g: Set<string>) => c.status === 'PUBLISHED' && (!c.isRestricted || g.has(c.id));
 const percent = (uid: string, c: Any) => {
@@ -179,7 +182,7 @@ function issueCert(uid: string, c: Any) {
   const finals = allLessons(c.id).filter((l) => l.isFinalQuiz).map((l) => l.id);
   const best = Math.max(-1, ...DBV.attempts.filter((a) => a.userId === uid && finals.includes(a.lessonId)).map((a) => a.score));
   const code = rcode();
-  DBV.certificates.push({ id: rid(), code, userId: uid, courseId: c.id, holderName: `${u.firstName} ${u.lastName}`, courseTitle: c.title, score: best >= 0 ? best : null, issuedAt: now(), revokedAt: null });
+  DBV.certificates.push({ id: rid(), code, userId: uid, courseId: c.id, holderName: `${u.firstName} ${u.lastName}`, courseTitle: c.title, score: best >= 0 ? best : null, issuedAt: now(), revokedAt: null, orgName: HOOK.certOrgName(uid, c.id) });
   return code;
 }
 function checkCompletion(uid: string, cid: string) {
@@ -234,6 +237,12 @@ const normMobile = (v: string) => {
 type H = (m: RegExpMatchArray, body: Any, q: URLSearchParams) => Any;
 const R: [string, RegExp, H][] = [];
 const on = (method: string, re: string, h: H) => R.push([method, new RegExp('^' + re + '$'), h]);
+/** مسیری که باید پیش از مسیرهای قدیمی‌تر بررسی شود */
+const onFirst = (method: string, re: string, h: H) => R.unshift([method, new RegExp('^' + re + '$'), h]);
+/** افزودن به پاسخ یک مسیر موجود */
+const wrap = (method: string, re: string, f: (orig: H) => H) => { const src = new RegExp('^' + re + '$').source; const i = R.findIndex(([m, r]) => m === method && r.source === src); if (i < 0) throw new Error('demo wrap: ' + re); R[i][2] = f(R[i][2]); };
+/** قلاب‌های مرحلهٔ ۳ (دوره‌های اشتراک، نام سازمان روی گواهی، مخاطب ویژهٔ برنامه) */
+const HOOK: Any = { subscribedCourseIds: () => [], certOrgName: () => null, eventScopeBlock: () => null };
 
 // احراز هویت
 on('POST', '/auth/otp', (_m, b) => { const mob = normMobile(b.mobile); if (!mob) throw E(400, 'bad_mobile', 'شماره باید ۱۱ رقم باشد و با ۰۹ شروع شود'); DBV.otpMobile = mob; return { sent: true, resendIn: 60, isNew: !DBV.users.some((u) => u.mobile === mob), devCode: DEMO_CODE }; });
@@ -652,9 +661,9 @@ const ev = (id: string) => { const e = DBV.events.find((x: Any) => x.id === id);
 const regOf = (eid: string, uid: string) => DBV.regs.find((r: Any) => r.eventId === eid && r.userId === uid);
 const cnt = (eid: string) => { const rs = DBV.regs.filter((r: Any) => r.eventId === eid); return { registered: rs.filter((r: Any) => r.status === 'REGISTERED').length, waitlist: rs.filter((r: Any) => r.status === 'WAITLIST').length, pending: rs.filter((r: Any) => r.status === 'PENDING').length, attended: rs.filter((r: Any) => r.attendedAt).length }; };
 const isHQ = (uid: string) => rolesOf(uid).some((r) => r === 'HQ_ADMIN' || r === 'HQ_OPERATOR');
-const audienceBlock = (e: Any, u: Any) => e.audienceGender && u.gender !== e.audienceGender ? 'این برنامه برای ' + (e.audienceGender === 'FEMALE' ? 'خواهران' : 'برادران') + ' است'
-  : e.audienceCountyId && u.countyId !== e.audienceCountyId ? 'این برنامه برای شهرستان دیگری است' : e.audienceProvinceId && provOf(u.countyId) !== e.audienceProvinceId ? 'این برنامه برای استان دیگری است' : null;
-const pubEv = (e: Any, mine: Any, full = false) => { const c = cnt(e.id); const out: Any = { id: e.id, title: e.title, kind: e.kind, startsAt: e.startsAt, endsAt: e.endsAt, location: e.location, hostName: e.hostName, capacity: e.capacity, seatsLeft: e.capacity == null ? null : Math.max(0, e.capacity - c.registered), waitlist: e.waitlist, requiresApproval: e.requiresApproval, registrationDeadline: e.registrationDeadline, audienceGender: e.audienceGender, status: e.status, cancelReason: e.cancelReason, courseId: null, registered: c.registered,
+const audienceBlock = (e: Any, u: Any) => HOOK.eventScopeBlock(e, u) ?? (e.audienceGender && u.gender !== e.audienceGender ? 'این برنامه برای ' + (e.audienceGender === 'FEMALE' ? 'خواهران' : 'برادران') + ' است'
+  : e.audienceCountyId && u.countyId !== e.audienceCountyId ? 'این برنامه برای شهرستان دیگری است' : e.audienceProvinceId && provOf(u.countyId) !== e.audienceProvinceId ? 'این برنامه برای استان دیگری است' : null);
+const pubEv = (e: Any, mine: Any, full = false) => { const c = cnt(e.id); const out: Any = { id: e.id, title: e.title, kind: e.kind, startsAt: e.startsAt, endsAt: e.endsAt, location: e.location, hostName: e.hostName, capacity: e.capacity, seatsLeft: e.capacity == null ? null : Math.max(0, e.capacity - c.registered), waitlist: e.waitlist, requiresApproval: e.requiresApproval, registrationDeadline: e.registrationDeadline, audienceGender: e.audienceGender, status: e.status, cancelReason: e.cancelReason, courseId: null, registered: c.registered, feeNote: e.feeNote ?? null, scoped: e.audienceNetworkId ? 'ORG' : e.audienceMosqueId ? 'MOSQUE' : e.audienceCoreId ? 'CORE' : null,
   my: mine ? (['CANCELLED', 'REJECTED'].includes(mine.status) ? { status: mine.status } : { status: mine.status, checkInCode: mine.status === 'REGISTERED' ? mine.code : null, attendedAt: mine.attendedAt, feedback: mine.feedback }) : null };
   if (full) Object.assign(out, { description: e.description, agenda: e.agenda, bring: e.bring, mapUrl: e.mapUrl, onlineUrl: mine?.status === 'REGISTERED' && Date.now() > new Date(e.startsAt).getTime() - 3600_000 ? e.onlineUrl : null, onlineSoon: e.kind === 'ONLINE' && !!e.onlineUrl });
   return out; };
@@ -683,12 +692,12 @@ on('POST', '/events/([^/]+)/cancel', (m) => { const u = me(); const e = ev(m[1])
 on('POST', '/events/([^/]+)/feedback', (m, b) => { const r = regOf(m[1], me().id); if (!r?.attendedAt) throw E(400, 'not_attended', 'نظر را شرکت‌کنندگان می‌دهند'); r.feedback = { rating: b.rating, comment: b.comment ?? '' }; return { ok: true }; });
 on('POST', '/events/([^/]+)/join', (m) => { const u = me(); const e = ev(m[1]); const r = regOf(e.id, u.id); if (r?.status !== 'REGISTERED') throw E(403, 'not_registered', 'اول ثبت‌نام کنید'); if (Date.now() < new Date(e.startsAt).getTime() - 3600_000) throw E(400, 'early', 'پیوند از یک ساعت پیش از شروع باز می‌شود'); r.attendedAt ??= now(); r.method ??= 'ONLINE'; return { url: e.onlineUrl }; });
 on('GET', '/manage/events', () => { const u = me(); return DBV.events.filter((e: Any) => isHQ(u.id) || e.createdById === u.id).sort((a: Any, b: Any) => b.startsAt.localeCompare(a.startsAt)).map((e: Any) => ({ ...pubEv(e, null), ...cnt(e.id) })); });
-const evFields = ['title', 'description', 'agenda', 'kind', 'location', 'mapUrl', 'onlineUrl', 'bring', 'hostName', 'capacity', 'waitlist', 'requiresApproval', 'audienceGender', 'audienceProvinceId', 'audienceCountyId', 'startsAt', 'endsAt', 'registrationDeadline'];
+const evFields = ['title', 'description', 'agenda', 'kind', 'location', 'mapUrl', 'onlineUrl', 'bring', 'hostName', 'capacity', 'waitlist', 'requiresApproval', 'audienceGender', 'audienceProvinceId', 'audienceCountyId', 'startsAt', 'endsAt', 'registrationDeadline', 'audienceNetworkId', 'audienceMosqueId', 'audienceCoreId', 'feeNote'];
 on('POST', '/manage/events', (_m, b) => { const u = me(); const r = rolesOf(u.id); if (!isHQ(u.id) && !r.includes('RAHYAR') && !(r.includes('INSTRUCTOR') && b.kind === 'ONLINE')) throw E(403, 'forbidden', 'اجازهٔ ساخت برنامه ندارید');
   if (!b.title || !b.kind || !b.startsAt || !b.endsAt) throw E(400, 'missing', 'عنوان، نوع، زمان شروع و پایان لازم است'); if (b.endsAt <= b.startsAt) throw E(400, 'bad_time', 'پایان باید بعد از شروع باشد');
   const e: Any = { id: rid(), status: 'DRAFT', cancelReason: null, createdById: u.id, waitlist: true, requiresApproval: false }; evFields.forEach((k) => b[k] !== undefined && (e[k] = b[k] === '' ? null : b[k])); DBV.events.push(e); return e; });
 on('GET', '/manage/events/([^/]+)', (m) => { const e = manageEv(m[1]); const people = DBV.regs.filter((r: Any) => r.eventId === e.id).map((r: Any) => { const p = U(r.userId); return { userId: r.userId, name: nm(r.userId), status: r.status, code: r.code, attendedAt: r.attendedAt, method: r.method, lateCancel: r.lateCancel, feedback: r.feedback, county: DBV.counties.find((c) => c.id === p?.countyId)?.name ?? null, mosque: DBV.mosques.find((x) => x.id === p?.mosqueId)?.name ?? null, byGroup: !!r.byId }; });
-  const fb = people.map((p: Any) => p.feedback?.rating).filter(Boolean); return { event: { ...pubEv(e, null), onlineUrl: e.onlineUrl, description: e.description, agenda: e.agenda, bring: e.bring, mapUrl: e.mapUrl, audienceProvinceId: e.audienceProvinceId, audienceCountyId: e.audienceCountyId }, counts: cnt(e.id), rating: fb.length ? +(fb.reduce((a: number, b: number) => a + b, 0) / fb.length).toFixed(1) : null, people }; });
+  const fb = people.map((p: Any) => p.feedback?.rating).filter(Boolean); return { event: { ...pubEv(e, null), onlineUrl: e.onlineUrl, description: e.description, agenda: e.agenda, bring: e.bring, mapUrl: e.mapUrl, audienceProvinceId: e.audienceProvinceId, audienceCountyId: e.audienceCountyId, audienceNetworkId: e.audienceNetworkId ?? null, audienceMosqueId: e.audienceMosqueId ?? null, audienceCoreId: e.audienceCoreId ?? null, feeNote: e.feeNote ?? null }, counts: cnt(e.id), rating: fb.length ? +(fb.reduce((a: number, b: number) => a + b, 0) / fb.length).toFixed(1) : null, people }; });
 on('PATCH', '/manage/events/([^/]+)', (m, b) => { const e = manageEv(m[1]); const old = e.startsAt + e.location; evFields.forEach((k) => b[k] !== undefined && (e[k] = b[k] === '' ? null : b[k]));
   if (e.status === 'PUBLISHED' && old !== e.startsAt + e.location) notify(DBV.regs.filter((r: Any) => r.eventId === e.id && ACTIVE.includes(r.status)).map((r: Any) => r.userId), { kind: 'event_changed', title: `تغییر در «${e.title}»`, link: `/events/${e.id}` }); promote(e); return e; });
 on('DELETE', '/manage/events/([^/]+)', (m) => { const e = manageEv(m[1]); if (e.status !== 'DRAFT') throw E(400, 'not_draft', 'برنامهٔ منتشرشده حذف نمی‌شود؛ لغوش کنید'); DBV.events = DBV.events.filter((x: Any) => x.id !== e.id); return { ok: true }; });
@@ -705,6 +714,11 @@ const checkIn = (eid: string, raw: string) => { manageEv(eid); let code = raw.tr
 on('POST', '/manage/events/([^/]+)/checkin', (m, b) => checkIn(m[1], b.code));
 on('POST', '/manage/events/([^/]+)/checkin-bulk', (m, b) => b.items.map((it: Any) => ({ code: it.code, ...checkIn(m[1], it.code) })));
 on('POST', '/manage/events/([^/]+)/notify', (m, b) => { const e = manageEv(m[1]); const ids = DBV.regs.filter((r: Any) => r.eventId === e.id && r.status === 'REGISTERED').map((r: Any) => r.userId); notify(ids, { kind: 'event_message', title: `${e.title}: ${b.title}`, body: b.body, link: `/events/${e.id}` }); return { sent: ids.length }; });
+
+/* ───────── مرحلهٔ ۳ ───────── */
+registerPhase3(Object.assign(HOOK, {
+  get db() { return DBV; }, on, onFirst, wrap, E, me, maybeMe, rolesOf, staff, rid, now, notify, nm, U, C, enr, prog, isHQ, provOf, normMobile, card, allLessons, resolve,
+}));
 
 export async function demoApi(path: string, method: string, body: Any): Promise<Any> {
   await new Promise((r) => setTimeout(r, 120)); // حس شبکه

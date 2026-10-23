@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { Dialog, Empty, ErrorBox, Spinner, useToast } from '../components/ui';
 import { api } from '../lib/api';
-import { useAuth } from '../lib/auth';
 import { fa, jDateTime, toEn } from '../lib/fa';
 import { DateBadge } from './Events';
 import { JalaliInput } from '../components/JalaliInput';
@@ -48,25 +47,33 @@ export function ManageEventList() {
 const toLocal = (v?: string | null) => v ?? '';
 const fromLocal = (v: string) => v || null;
 
+interface EventOptions { open: 'ALL' | 'ONLINE' | null; scoped: { kind: 'ORG' | 'MOSQUE' | 'CORE'; id: string; label: string }[] }
+const scopeFields = (o: EventOptions['scoped'][number]) => ({ audienceNetworkId: o.kind === 'ORG' ? o.id : null, audienceMosqueId: o.kind === 'MOSQUE' ? o.id : null, audienceCoreId: o.kind === 'CORE' ? o.id : null });
+
 export function EventEditor() {
   const { id } = useParams();
   const base = useBase();
   const nav = useNavigate();
   const toast = useToast();
   const qc = useQueryClient();
-  const { has, isStaff } = useAuth();
-  const onlyOnline = !isStaff && !has('RAHYAR');
+  const opts = useQuery({ queryKey: ['event-options'], queryFn: () => api<EventOptions>('/manage/events/options'), staleTime: 60_000 });
+  // برگزارکنندهٔ محدود (مدیر سازمان، امام، مسئول هسته) فقط برای اعضای خودش برنامه می‌گذارد
+  const scopedOnly = opts.data ? !opts.data.open : false;
+  const onlyOnline = opts.data?.open === 'ONLINE';
   const ex = useQuery({ queryKey: ['manage-event', id], queryFn: () => api<Full>(`/manage/events/${id}`), enabled: !!id });
   const geo = useQuery({ queryKey: ['provinces'], queryFn: () => api<{ id: string; name: string; counties: { id: string; name: string }[] }[]>('/geo/provinces'), staleTime: Infinity });
   const [f, setF] = useState<any>(null);
   useEffect(() => {
     if (id && ex.data) { const e = ex.data.event; setF({ ...e, startsAt: toLocal(e.startsAt), endsAt: toLocal(e.endsAt), registrationDeadline: toLocal(e.registrationDeadline) }); }
-    else if (!id) setF({ kind: onlyOnline ? 'ONLINE' : 'IN_PERSON', waitlist: true, requiresApproval: false, title: '', startsAt: '', endsAt: '' });
-  }, [id, ex.data]); // eslint-disable-line react-hooks/exhaustive-deps
+    else if (!id && opts.data) {
+      const sc = !opts.data.open && opts.data.scoped[0];
+      setF({ kind: opts.data.open === 'ONLINE' ? 'ONLINE' : 'IN_PERSON', waitlist: true, requiresApproval: false, title: '', startsAt: '', endsAt: '', ...(sc ? scopeFields(sc) : {}) });
+    }
+  }, [id, ex.data, opts.data]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = useMutation({
     mutationFn: () => {
       const body: any = {};
-      for (const k of ['title', 'kind', 'description', 'agenda', 'location', 'mapUrl', 'onlineUrl', 'bring', 'hostName', 'waitlist', 'requiresApproval', 'audienceGender', 'audienceProvinceId', 'audienceCountyId']) body[k] = f[k] ?? null;
+      for (const k of ['title', 'kind', 'description', 'agenda', 'location', 'mapUrl', 'onlineUrl', 'bring', 'hostName', 'waitlist', 'requiresApproval', 'audienceGender', 'audienceProvinceId', 'audienceCountyId', 'audienceNetworkId', 'audienceMosqueId', 'audienceCoreId', 'feeNote']) body[k] = f[k] ?? null;
       body.capacity = f.capacity ? Number(toEn(String(f.capacity))) : null;
       body.startsAt = fromLocal(f.startsAt); body.endsAt = fromLocal(f.endsAt); body.registrationDeadline = fromLocal(f.registrationDeadline);
       return id ? api(`/manage/events/${id}`, { method: 'PATCH', body }) : api<{ id: string }>('/manage/events', { body });
@@ -74,7 +81,10 @@ export function EventEditor() {
     onSuccess: (r: any) => { qc.invalidateQueries({ queryKey: ['manage-events'] }); qc.invalidateQueries({ queryKey: ['manage-event', id] }); toast('ذخیره شد'); nav(`${base}/${id ?? r.id}`); },
     onError: (e) => toast((e as Error).message, 'err'),
   });
+  if (opts.error) return <ErrorBox error={opts.error} />;
   if (!f || (id && ex.isLoading)) return <Spinner />;
+  const scopes = opts.data?.scoped ?? [];
+  const curScope = scopes.find((o) => (o.kind === 'ORG' ? f.audienceNetworkId : o.kind === 'MOSQUE' ? f.audienceMosqueId : f.audienceCoreId) === o.id);
   const set = (k: string) => (e: { target: { value: string } }) => setF((x: any) => ({ ...x, [k]: e.target.value }));
   const counties = geo.data?.find((p) => p.id === f.audienceProvinceId)?.counties ?? [];
   return (
@@ -98,6 +108,7 @@ export function EventEditor() {
           <div className="field"><label htmlFor="d">دربارهٔ برنامه</label><textarea id="d" className="input min-h-28" value={f.description ?? ''} onChange={set('description')} /></div>
           <div className="field"><label htmlFor="ag">برنامهٔ جلسه <span className="font-normal text-muted">(اختیاری)</span></label><textarea id="ag" className="input" value={f.agenda ?? ''} onChange={set('agenda')} /></div>
           <div className="field"><label htmlFor="b">همراه بیاورید <span className="font-normal text-muted">(اختیاری)</span></label><input id="b" className="input" value={f.bring ?? ''} onChange={set('bring')} /></div>
+          <div className="field"><label htmlFor="fee">هزینهٔ شرکت <span className="font-normal text-muted">(اختیاری)</span></label><input id="fee" className="input" maxLength={500} value={f.feeNote ?? ''} onChange={set('feeNote')} placeholder="مثلاً پذیرایی ۵۰ هزار تومان، پرداخت در محل" /><span className="hint">فقط اعلام می‌شود؛ مدرسه پولی دریافت نمی‌کند و دریافت با خود شماست.</span></div>
         </section>
         <section className="card grid gap-4 p-5">
           <h2 className="font-extrabold">ثبت‌نام</h2>
@@ -110,6 +121,14 @@ export function EventEditor() {
         </section>
         <section className="card grid gap-4 p-5">
           <h2 className="font-extrabold">مخاطب</h2>
+          {scopes.length > 0 && (
+            <div className="field"><label htmlFor="sc">ویژهٔ اعضای</label>
+              <select id="sc" className="input" value={curScope ? `${curScope.kind}:${curScope.id}` : ''} onChange={(e) => { const o = scopes.find((x) => `${x.kind}:${x.id}` === e.target.value); setF({ ...f, audienceNetworkId: null, audienceMosqueId: null, audienceCoreId: null, ...(o ? scopeFields(o) : {}) }); }}>
+                {!scopedOnly && <option value="">همه (بر اساس استان و جنسیت پایین)</option>}
+                {scopes.map((o) => <option key={o.kind + o.id} value={`${o.kind}:${o.id}`}>{o.label}</option>)}
+              </select>
+              <span className="hint">{scopedOnly ? 'شما برای اعضای سازمان، مسجد یا هستهٔ خودتان برنامه می‌گذارید؛ دیگران آن را نمی‌بینند.' : 'اگر یکی را انتخاب کنید، فقط همان اعضا برنامه را می‌بینند.'}</span></div>
+          )}
           <div className="seg w-fit">{[['', 'همه'], ['FEMALE', 'خواهران'], ['MALE', 'برادران']].map(([k, t]) => <button type="button" key={k} aria-pressed={(f.audienceGender ?? '') === k} onClick={() => setF({ ...f, audienceGender: k || null })}>{t}</button>)}</div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="field"><label htmlFor="ap">استان</label><select id="ap" className="input" value={f.audienceProvinceId ?? ''} onChange={(e) => setF({ ...f, audienceProvinceId: e.target.value || null, audienceCountyId: null })}><option value="">همهٔ استان‌ها</option>{geo.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>

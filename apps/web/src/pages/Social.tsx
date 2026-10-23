@@ -3,10 +3,11 @@ import { Bell, Building2, CheckCheck, Copy, Landmark, Link2, MessageCircle, Plus
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { Dialog, Empty, ErrorBox, Spinner, useToast } from '../components/ui';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { ago, fa } from '../lib/fa';
 import type { Notice } from '../lib/types';
+import { OrgReport, OrgSubscriptionCard, PlansTable, type OrgSub } from './Business';
 
 const Title = ({ t, d, children }: { t: string; d?: string; children?: React.ReactNode }) => (
   <div className="flex flex-wrap items-end justify-between gap-4">
@@ -309,16 +310,17 @@ export function ImamPage() {
 }
 
 // ───────── سازمان مشترک ─────────
-interface OrgFull { id: string; name: string; underRahyar: boolean; courses: { id: string; title: string }[]; members: { id: string; name: string; courses: { courseId: string; state: 'done' | 'active' | 'none' }[] }[] }
+interface OrgFull { id: string; name: string; underRahyar: boolean; subscription: OrgSub; courses: { id: string; title: string }[]; members: { id: string; name: string; courses: { courseId: string; state: 'done' | 'active' | 'none' }[] }[] }
 
 export function OrgList() {
-  const q = useQuery({ queryKey: ['orgs'], queryFn: () => api<{ id: string; name: string }[]>('/org') });
+  const q = useQuery({ queryKey: ['orgs'], queryFn: () => api<{ id: string; name: string; subscription: OrgSub }[]>('/org') });
   const nav = useNavigate();
   useEffect(() => { if (q.data?.length === 1) nav(`/org/${q.data[0].id}`, { replace: true }); }, [q.data, nav]);
   if (q.isLoading) return <Spinner />;
   return (
     <div className="rise grid gap-6"><Title t="پنل سازمان" />
-      {q.data?.length ? <div className="grid gap-3 sm:grid-cols-2">{q.data.map((o) => <Link key={o.id} to={`/org/${o.id}`} className="card flex items-center gap-3 p-5 no-underline"><Building2 className="size-6 text-leaf" /><b className="text-ink">{o.name}</b></Link>)}</div>
+      {q.data?.length ? <div className="grid gap-3 sm:grid-cols-2">{q.data.map((o) => <Link key={o.id} to={`/org/${o.id}`} className="card flex items-center gap-3 p-5 no-underline"><Building2 className="size-6 text-leaf" /><b className="flex-1 text-ink">{o.name}</b>
+          {o.subscription.active ? <span className="chip chip-leaf">{o.subscription.subscription?.planLabel}</span> : <span className="chip chip-flame">اشتراک فعال نیست</span>}</Link>)}</div>
         : <Empty icon={Building2} title="مدیر سازمانی نیستید" />}
     </div>
   );
@@ -328,16 +330,26 @@ export function OrgPage() {
   const { id = '' } = useParams();
   const qc = useQueryClient();
   const toast = useToast();
-  const q = useQuery({ queryKey: ['org', id], queryFn: () => api<OrgFull>(`/org/${id}`) });
+  const q = useQuery({ queryKey: ['org', id], queryFn: () => api<OrgFull>(`/org/${id}`), retry: false });
+  const sub = useQuery({ queryKey: ['org-sub', id], queryFn: () => api<OrgSub>(`/org/${id}/subscription`), enabled: q.error instanceof ApiError && q.error.code === 'no_subscription' });
+  const [tab, setTab] = useState<'members' | 'report' | 'plans'>('members');
   const [add, setAdd] = useState(false);
   const [list, setList] = useState('');
   const [res, setRes] = useState<{ added: number; missing: string[] } | null>(null);
   const addM = useMutation({
     mutationFn: () => api<{ added: number; missing: string[] }>(`/org/${id}/members`, { body: { mobiles: list.split(/[\s,،]+/).filter(Boolean) } }),
     onSuccess: (r) => { setRes(r); qc.invalidateQueries({ queryKey: ['org', id] }); },
+    onError: (e) => toast((e as Error).message, 'err'),
   });
   const rm = useMutation({ mutationFn: (uid: string) => api(`/org/${id}/members/${uid}`, { method: 'DELETE' }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['org', id] }); toast('از اشتراک برداشته شد'); } });
   if (q.isLoading) return <Spinner />;
+  // بی‌اشتراک: پنل بسته است، ولی وضعیت و بسته‌ها دیده می‌شود
+  if (q.error instanceof ApiError && q.error.code === 'no_subscription') return (
+    <div className="rise grid gap-6"><Title t="پنل سازمان" />
+      {sub.data ? <OrgSubscriptionCard s={sub.data} orgId={id} /> : <Spinner />}
+      <section className="grid gap-3"><h2 className="text-lg font-extrabold">بسته‌های سازمانی</h2><PlansTable /></section>
+    </div>
+  );
   if (q.error) return <ErrorBox error={q.error} />;
   const o = q.data!;
   const st = { done: ['chip-leaf', 'تمام'], active: ['chip-flame', 'در حال گذراندن'], none: ['', 'شروع نکرده'] } as const;
@@ -346,7 +358,11 @@ export function OrgPage() {
       <Title t={o.name} d={`${fa(o.members.length)} عضو · ${fa(o.courses.length)} دوره در اشتراک${o.underRahyar ? ' · زیر پوشش شبکهٔ راهیاری' : ''}`}>
         <button className="btn btn-primary" onClick={() => { setAdd(true); setRes(null); setList(''); }}><Plus className="size-4" />افزودن عضو</button>
       </Title>
-      <section className="card p-5">
+      <OrgSubscriptionCard s={o.subscription} orgId={id} />
+      <div className="seg w-fit">{([['members', 'اعضا'], ['report', 'گزارش فصلی'], ['plans', 'بسته‌ها']] as const).map(([k, t]) => <button key={k} aria-pressed={tab === k} onClick={() => setTab(k)}>{t}</button>)}</div>
+      {tab === 'report' && <OrgReport orgId={id} />}
+      {tab === 'plans' && <PlansTable highlight={o.subscription.subscription?.plan} />}
+      {tab === 'members' && <section className="card p-5">
         {o.members.length ? (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
@@ -361,8 +377,8 @@ export function OrgPage() {
             </table>
           </div>
         ) : <Empty icon={UsersRound} title="هنوز عضوی اضافه نشده">شمارهٔ همراه کسانی را که در مدرسه حساب دارند وارد کنید.</Empty>}
-      </section>
-      <p className="hint">شما فقط پیشرفت دوره‌های همین اشتراک را می‌بینید. پرداخت اشتراک بیرون از سامانه انجام می‌شود.</p>
+      </section>}
+      <p className="hint">شما فقط پیشرفت دوره‌های همین اشتراک را می‌بینید؛ متن گزارش‌ها و یادداشت‌های اعضا خصوصی است. قرارداد و پرداخت با ستاد مدرسه است.</p>
       <Dialog open={add} onClose={() => setAdd(false)} title="افزودن عضو با شمارهٔ همراه">
         {res ? (
           <div className="grid gap-3">

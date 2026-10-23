@@ -10,7 +10,7 @@ import { Composer } from './Social';
 
 export const CATEGORY: Record<string, string> = { LOGIN: 'ورود و حساب', COURSE: 'دوره و آزمون', EVENT: 'برنامه‌ها', TECH: 'مشکل فنی', OTHER: 'دیگر' };
 export const TSTATUS: Record<string, [string, string]> = { OPEN: ['chip-flame', 'منتظر پاسخ'], ANSWERED: ['chip-leaf', 'پاسخ داده شد'], CLOSED: ['', 'بسته'] };
-export interface TRow { id: string; category: string; subject: string; status: string; createdAt: string; updatedAt: string; userName: string; assignee: string | null }
+export interface TRow { id: string; category: string; subject: string; status: string; priority?: boolean; createdAt: string; updatedAt: string; userName: string; assignee: string | null }
 
 const FAQ: [string, string][] = [
   ['کد ورود نمی‌رسد', 'شماره را با ۰۹ و ۱۱ رقم وارد کنید. اگر پیامک نرسید، یک دقیقه بعد «ارسال دوباره» را بزنید. پیامک‌های تبلیغاتی گوشی را هم نگاه کنید.'],
@@ -75,7 +75,7 @@ export function TicketList({ rows, title, showUser, base = '/support' }: { rows:
       {title && <h2 className="mb-3 font-extrabold">{title}</h2>}
       <ul className="card divide-y divide-line">{rows.map((t) => (
         <li key={t.id}><Link to={`${base}/${t.id}`} className="flex flex-wrap items-center gap-3 px-4 py-3 no-underline hover:bg-sunken">
-          <span className="min-w-0 flex-1"><b className="block truncate text-ink">{t.subject}</b><span className="text-sm text-muted">{CATEGORY[t.category]}{showUser ? ` · ${t.userName}` : ''}{t.assignee ? ` · ارجاع: ${t.assignee}` : ''} · {ago(t.updatedAt)}</span></span>
+          <span className="min-w-0 flex-1"><b className="block truncate text-ink">{t.priority && showUser && <span className="chip chip-flame me-2 align-middle">تعهدی</span>}{t.subject}</b><span className="text-sm text-muted">{CATEGORY[t.category]}{showUser ? ` · ${t.userName}` : ''}{t.assignee ? ` · ارجاع: ${t.assignee}` : ''} · {ago(t.updatedAt)}</span></span>
           <span className={`chip ${TSTATUS[t.status][0]}`}>{TSTATUS[t.status][1]}</span>
         </Link></li>
       ))}</ul>

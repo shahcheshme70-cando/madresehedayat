@@ -36,8 +36,10 @@ export function useRoleLinks() {
   if (me?.imamOf?.length) links.push({ to: '/imam', label: 'مسجد من', icon: Landmark });
   if (me?.cores?.length || me?.gender === 'FEMALE') links.push({ to: '/cores', label: 'هسته‌های من', icon: UsersRound });
   if (me?.orgs?.length) links.push({ to: '/org', label: 'پنل سازمان', icon: Building2 });
-  if (isStaff || has('RAHYAR', 'INSTRUCTOR')) links.push({ to: '/manage/events', label: 'برگزاری برنامه', icon: CalendarCog });
-  if (isStaff || has('RAHYAR') || me?.imamOf?.length || me?.cores?.some((c) => c.isLeader)) links.push({ to: '/broadcast', label: 'پیام گروهی', icon: Megaphone });
+  // مدیر سازمان، امام و مسئول هسته برای اعضای خودشان برنامه و پیام گروهی دارند (مدل کسب‌وکار)
+  const leads = !!(me?.imamOf?.length || me?.cores?.some((c) => c.isLeader) || me?.orgs?.length);
+  if (isStaff || has('RAHYAR', 'INSTRUCTOR') || leads) links.push({ to: '/manage/events', label: 'برگزاری برنامه', icon: CalendarCog });
+  if (isStaff || has('RAHYAR') || leads) links.push({ to: '/broadcast', label: 'پیام گروهی', icon: Megaphone });
   links.push({ to: '/messages', label: 'پیام با راهیار', icon: MessageCircle });
   links.push({ to: '/help', label: 'کمک و پشتیبانی', icon: LifeBuoy });
   return links;

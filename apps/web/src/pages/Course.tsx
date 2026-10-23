@@ -39,6 +39,7 @@ export default function Course() {
       {c.me.certificate && <Link className="btn btn-primary" to={`/verify/${c.me.certificate.code}`}><Award className="size-4" />دیدن گواهی</Link>}
     </div>
   );
+  else if (!next) cta = <p className="rounded-2xl bg-sunken p-4 text-muted">درس‌های این دوره هنوز آماده نشده است.</p>;
   else if (c.me) cta = (
     <div className="grid gap-3">
       <Link className="btn btn-primary btn-lg w-fit" to={`/lessons/${c.me.lastLessonId ?? next.id}`}><Play className="size-5" />{c.me.percent ? 'ادامهٔ دوره' : 'شروع اولین درس'}</Link>
@@ -67,6 +68,7 @@ export default function Course() {
           {c.level && <span className="text-sm font-bold text-leaf-ink">{c.level}</span>}
           <h1 className="text-[clamp(26px,3.6vw,40px)] font-extrabold">{c.title}</h1>
           {c.about && <p className="prose-fa">{c.about}</p>}
+          {c.sponsor && <p className="text-sm text-muted">این دوره با حمایت <b className="font-semibold text-body">{c.sponsor}</b> ساخته شد.</p>}
           {cta}
           <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[['مدرس', c.instructor ?? '—'], ['زمان کل', minutes(total)], ['درس‌ها', `${fa(all.length)} درس`], ['قبولی آزمون', `٪${fa(c.passScore)}`]].map(([k, v]) => (

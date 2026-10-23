@@ -348,7 +348,7 @@ export class EventsService {
       where r.event_id = ${id} order by r.created_at`);
     const cs = (await this.counts([id])).get(id) ?? { registered: 0, waitlist: 0, pending: 0, attended: 0 };
     const fb = rows.rows.map((r: any) => r.feedback?.rating).filter(Boolean);
-    return { event: { ...this.pub(e, cs), onlineUrl: e.onlineUrl, description: e.description, agenda: e.agenda, bring: e.bring, mapUrl: e.mapUrl, audienceProvinceId: e.audienceProvinceId, audienceCountyId: e.audienceCountyId },
+    return { event: { ...this.pub(e, cs), onlineUrl: e.onlineUrl, description: e.description, agenda: e.agenda, bring: e.bring, mapUrl: e.mapUrl, audienceProvinceId: e.audienceProvinceId, audienceCountyId: e.audienceCountyId, audienceNetworkId: e.audienceNetworkId, audienceMosqueId: e.audienceMosqueId, audienceCoreId: e.audienceCoreId },
       counts: cs, rating: fb.length ? +(fb.reduce((a: number, b: number) => a + b, 0) / fb.length).toFixed(1) : null, people: rows.rows };
   }
 

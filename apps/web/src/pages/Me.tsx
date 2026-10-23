@@ -9,7 +9,7 @@ import { useAuth } from '../lib/auth';
 import { fa, jDate } from '../lib/fa';
 import type { CourseCard as C } from '../lib/types';
 
-interface Cert { code: string; courseTitle: string; issuedAt: string; score: number | null; courseSlug: string }
+interface Cert { code: string; courseTitle: string; issuedAt: string; score: number | null; courseSlug: string; orgName: string | null }
 type Tab = 'active' | 'done' | 'archived';
 
 export default function Me() {
@@ -51,7 +51,7 @@ export default function Me() {
             {certs.data.map((c) => (
               <div key={c.code} className="card flex items-center gap-4 p-4">
                 <Award className="size-11 shrink-0 rounded-xl bg-flame-soft p-2.5 text-flame-ink" />
-                <div className="min-w-0 flex-1"><b className="block text-ink">{c.courseTitle}</b>
+                <div className="min-w-0 flex-1"><b className="block text-ink">{c.courseTitle}</b>{c.orgName && <span className="block text-xs text-muted">برای اعضای {c.orgName}</span>}
                   <span className="text-sm text-muted">{jDate(c.issuedAt)}{c.score != null ? ` · نمره ٪${fa(c.score)}` : ''}</span>
                   <span className="mt-0.5 block text-xs text-muted">شناسهٔ استعلام: <b dir="ltr" className="tnum">{c.code}</b></span></div>
                 <div className="flex flex-col gap-1">

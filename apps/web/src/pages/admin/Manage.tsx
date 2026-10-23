@@ -201,7 +201,7 @@ export function Grants() {
   const restricted = (courses.data ?? []).filter((c) => c.isRestricted);
   return (
     <div className="rise grid gap-6">
-      <PageHead title="دسترسی ویژه" desc="دوره‌های «فقط برای مشترکان» را به یک یا چند نفر، یا به همهٔ افراد یک سازمان (مثل برکت) بدهید. پرداخت بیرون از سامانه انجام می‌شود.">
+      <PageHead title="دسترسی ویژه" desc="دوره‌های محدود را به یک یا چند نفر بدهید (مثلاً هدیهٔ ستاد). دسترسی سازمان‌ها از «مدل کسب‌وکار ← اشتراک‌ها» داده می‌شود تا سقف نفرات و تاریخ پایان رعایت شود.">
         {has('HQ_ADMIN') && <button className="btn btn-primary" onClick={() => { setMissing([]); setOpen(true); }}><Plus className="size-4" />دسترسی تازه</button>}
       </PageHead>
       {q.data?.length ? (

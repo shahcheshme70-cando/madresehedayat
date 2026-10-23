@@ -27,6 +27,7 @@ import RahyarTree from './pages/admin/RahyarTree';
 import { AdminSupport, Help, TicketPage } from './pages/Support';
 import { AdminBroadcasts, BroadcastPage } from './pages/Broadcast';
 import { AccessLogPage, Samples, ToolsAdmin } from './pages/admin/Extra';
+import { AdminBusiness } from './pages/Business';
 import Toolbox, { BoardPage, PublicBoard, ToolPage } from './pages/Tools';
 import { PathExam } from './pages/Learn';
 import './styles/app.css';
@@ -110,6 +111,8 @@ const router = (import.meta.env.VITE_DEMO ? createHashRouter : createBrowserRout
     children: [
       { index: true, element: <Dashboard /> },
       { path: 'courses', element: <Courses /> },
+      { path: 'business', element: <AdminBusiness /> },
+      { path: 'business/:tab', element: <AdminBusiness /> },
       { path: 'courses/:id', element: <CourseEditor /> },
       { path: 'paths', element: <Paths /> },
       { path: 'users', element: <UsersPage /> },

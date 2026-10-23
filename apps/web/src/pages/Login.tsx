@@ -25,6 +25,8 @@ export default function Login() {
   const [mobile, setMobile] = useState('');
   const [code, setCode] = useState('');
   const [devCode, setDevCode] = useState<string | null>(null);
+  // کد ورود اگر بله یا ایتا وصل باشد رایگان همان‌جا می‌رود (مدل کسب‌وکار: کم کردن پیامک)
+  const [channel, setChannel] = useState<'SMS' | 'BALE' | 'EITAA'>('SMS');
   const [isNew, setIsNew] = useState(false);
   const [regToken, setRegToken] = useState('');
   const [err, setErr] = useState('');
@@ -56,14 +58,14 @@ export default function Login() {
   }
   useEffect(() => { if (wait <= 0) return; const t = setTimeout(() => setWait((w) => w - 1), 1000); return () => clearTimeout(t); }, [wait]);
 
-  async function sendCode(e?: FormEvent) {
+  async function sendCode(e?: FormEvent, via?: 'sms') {
     e?.preventDefault();
     const m = normMobile(mobile);
     if (!/^09\d{9}$/.test(m)) { setErr('شماره باید ۱۱ رقم باشد و با ۰۹ شروع شود.'); return; }
     setBusy(true); setErr('');
     try {
-      const r = await api<{ resendIn: number; isNew: boolean; devCode?: string }>('/auth/otp', { body: { mobile: m } });
-      setMobile(m); setIsNew(r.isNew); setDevCode(r.devCode ?? null); setWait(r.resendIn); setCode(''); setStep('code');
+      const r = await api<{ resendIn: number; isNew: boolean; devCode?: string; channel: 'SMS' | 'BALE' | 'EITAA' }>('/auth/otp', { body: { mobile: m, ...(via ? { via } : {}) } });
+      setMobile(m); setIsNew(r.isNew); setChannel(r.channel ?? 'SMS'); setDevCode(r.devCode ?? null); setWait(r.resendIn); setCode(''); setStep('code');
       setTimeout(() => codeRef.current?.focus(), 50);
     } catch (e) {
       const a = e as ApiError;
@@ -95,7 +97,7 @@ export default function Login() {
           {step === 'mobile' && (
             <form onSubmit={sendCode} noValidate className="rise">
               <h1 className="text-[clamp(24px,3vw,30px)] font-extrabold">ورود یا ثبت‌نام</h1>
-              <p className="mt-1.5 text-muted">با شمارهٔ موبایلتان وارد شوید؛ اگر بار اول است، همین‌جا ثبت‌نام می‌کنید.</p>
+              <p className="mt-1.5 text-muted">با شمارهٔ موبایلتان وارد شوید؛ اگر بار اول است، همین‌جا ثبت‌نام می‌کنید. اگر بله یا ایتا را در تنظیمات وصل کرده باشید، کد همان‌جا می‌آید.</p>
               <div className="field mt-6">
                 <label htmlFor="mobile">شمارهٔ موبایل</label>
                 <div className="relative">
@@ -119,7 +121,9 @@ export default function Login() {
             <form onSubmit={verify} noValidate className="rise">
               <button type="button" className="btn btn-ghost btn-sm -ms-3 mb-2" onClick={() => { setStep('mobile'); setErr(''); }}><ArrowRight className="size-4" />تغییر شماره</button>
               <h1 className="text-[clamp(24px,3vw,30px)] font-extrabold">کد تأیید را وارد کنید</h1>
-              <p className="mt-1.5 text-muted">کد ۵ رقمی به <b dir="ltr" className="tnum text-ink">{maskMobile(mobile)}</b> پیامک شد.</p>
+              {channel === 'SMS'
+                ? <p className="mt-1.5 text-muted">کد ۵ رقمی به <b dir="ltr" className="tnum text-ink">{maskMobile(mobile)}</b> پیامک شد.</p>
+                : <p className="mt-1.5 text-muted">کد ۵ رقمی در <b className="text-ink">{channel === 'BALE' ? 'بله' : 'ایتا'}</b> برایتان فرستاده شد (گفت‌وگو با بات مدرسه).</p>}
               <div className="field mt-6">
                 <label htmlFor="code" className="sr-only">کد تأیید</label>
                 <input id="code" ref={codeRef} className="input ltr tnum h-16 text-center text-3xl font-extrabold tracking-[0.6em]" inputMode="numeric" autoComplete="one-time-code" maxLength={5}
@@ -131,6 +135,7 @@ export default function Login() {
               <div className="mt-4 text-center text-sm">
                 {wait > 0 ? <span className="text-muted">ارسال دوباره تا <b className="tnum">{fa(wait)}</b> ثانیهٔ دیگر</span>
                   : <button type="button" className="font-bold text-leaf-ink" onClick={() => sendCode()} disabled={busy}>ارسال دوبارهٔ کد</button>}
+                {channel !== 'SMS' && wait <= 0 && <button type="button" className="ms-4 font-bold text-muted" onClick={() => sendCode(undefined, 'sms')} disabled={busy}>با پیامک بفرست</button>}
               </div>
             </form>
           )}

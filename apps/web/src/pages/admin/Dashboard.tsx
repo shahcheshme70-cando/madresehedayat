@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { fa, STATUS_LABEL } from '../../lib/fa';
 import { PageHead } from './AdminShell';
+import { BusinessKpi } from '../Business';
 
 interface Stats {
   users: number; newUsersWeek: number; activeWeek: number; enrollments: number; completions: number; certificates: number;
@@ -36,6 +37,7 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+      <div className="mt-6"><BusinessKpi /></div>
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <section className="card p-5">
           <h2 className="mb-4 text-base font-extrabold">پرثبت‌نام‌ترین دوره‌ها</h2>

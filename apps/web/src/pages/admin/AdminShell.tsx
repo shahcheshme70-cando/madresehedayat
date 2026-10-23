@@ -1,4 +1,4 @@
-import { Award, BookOpen, BookOpenCheck, CalendarDays, Compass, House, KeyRound, LayoutDashboard, Landmark, LifeBuoy, Megaphone, Route, ScrollText, ShieldCheck, Users, Wrench } from 'lucide-react';
+import { Award, BadgeDollarSign, BookOpen, BookOpenCheck, CalendarDays, Compass, House, KeyRound, LayoutDashboard, Landmark, LifeBuoy, Megaphone, Route, ScrollText, ShieldCheck, Users, Wrench } from 'lucide-react';
 import { Link, NavLink, Outlet } from 'react-router';
 import { Brand } from '../../components/Shell';
 import { MfaGate } from './MfaGate';
@@ -13,6 +13,7 @@ const SECS = [
   { to: '/admin/rahyar', label: 'ساختار راهیاری', icon: Compass },
   { to: '/admin/events', label: 'برنامه‌ها', icon: CalendarDays },
   { to: '/admin/users', label: 'کاربران و نقش‌ها', icon: Users },
+  { to: '/admin/business', label: 'مدل کسب‌وکار', icon: BadgeDollarSign },
   { to: '/admin/grants', label: 'دسترسی ویژه', icon: KeyRound },
   { to: '/admin/certificates', label: 'گواهی‌ها', icon: Award },
   { to: '/admin/mosques', label: 'مساجد', icon: Landmark },

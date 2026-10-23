@@ -15,6 +15,7 @@ export interface EventCard {
   id: string; title: string; kind: 'ONLINE' | 'IN_PERSON'; startsAt: string; endsAt: string; location: string | null; hostName: string | null;
   capacity: number | null; seatsLeft: number | null; waitlist: boolean; requiresApproval: boolean; registrationDeadline: string | null;
   audienceGender: 'MALE' | 'FEMALE' | null; status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED'; cancelReason: string | null; registered: number;
+  feeNote: string | null; scoped: 'ORG' | 'MOSQUE' | 'CORE' | null;
   my: { status: RegStatus; checkInCode?: string | null; attendedAt?: string | null; feedback?: { rating: number; comment?: string } | null } | null;
 }
 export interface EventDetail extends EventCard {
@@ -37,7 +38,7 @@ export interface PathCard {
 
 export interface LessonRow { id: string; title: string; type: LessonType; durationSec: number; required: boolean; isFinalQuiz: boolean; done: boolean; best: number | null }
 export interface CourseDetail extends CourseCard {
-  about: string | null; outcomes: string[]; passScore: number; missionRule: 'ON_SUBMIT' | 'ON_APPROVAL';
+  about: string | null; outcomes: string[]; passScore: number; missionRule: 'ON_SUBMIT' | 'ON_APPROVAL'; sponsor: string | null;
   dependencies: { kind: 'PREREQUISITE' | 'COREQUISITE'; course: CourseCard; done: boolean }[];
   locked: boolean;
   modules: { id: string; title: string; lessons: LessonRow[] }[];

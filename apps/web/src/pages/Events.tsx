@@ -138,6 +138,7 @@ export function EventPage() {
           {e.description && <section><h2 className="mb-2 font-extrabold">دربارهٔ برنامه</h2><p className="prose-fa whitespace-pre-line">{e.description}</p></section>}
           {e.agenda && <section><h2 className="mb-2 font-extrabold">برنامهٔ جلسه</h2><p className="prose-fa whitespace-pre-line">{e.agenda}</p></section>}
           {e.bring && <section className="rounded-2xl bg-flame-soft p-4"><b className="text-flame-ink">همراه بیاورید: </b><span className="text-ink">{e.bring}</span></section>}
+          {e.feeNote && <section className="rounded-2xl bg-sunken p-4"><b className="text-ink">هزینهٔ شرکت: </b><span>{e.feeNote}</span><p className="hint mt-1">پرداخت با برگزارکننده است؛ مدرسه پولی دریافت نمی‌کند.</p></section>}
         </div>
 
         <aside className="card grid content-start gap-3 p-5 md:sticky md:top-24">

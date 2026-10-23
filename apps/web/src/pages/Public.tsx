@@ -22,7 +22,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
   );
 }
 
-interface Verify { valid: boolean; revoked?: boolean; holderName?: string; courseTitle?: string; issuedAt?: string; score?: number | null; code?: string }
+interface Verify { valid: boolean; revoked?: boolean; holderName?: string; courseTitle?: string; issuedAt?: string; score?: number | null; code?: string; orgName?: string | null }
 
 export function VerifyPage() {
   const { code } = useParams();
@@ -49,6 +49,7 @@ export function VerifyPage() {
               <p className="text-sm text-muted">گواهی پایان دوره</p>
               <h2 className="text-2xl font-extrabold">{q.data.courseTitle}</h2>
               <p className="max-w-md text-lg">این گواهی تأیید می‌کند که <b className="text-ink">{q.data.holderName}</b> این دوره را در تاریخ {jDate(q.data.issuedAt!)}{q.data.score != null ? ` با نمرهٔ ${fa(q.data.score)} از ۱۰۰` : ''} در مدرسهٔ هدایت به پایان رسانده است.</p>
+              {q.data.orgName && <p className="text-muted">صادرشده برای اعضای {q.data.orgName}</p>}
               <p className="mt-2 text-xs text-muted">شناسهٔ استعلام: <b dir="ltr" className="tnum">{q.data.code}</b></p>
             </div>
           </article>

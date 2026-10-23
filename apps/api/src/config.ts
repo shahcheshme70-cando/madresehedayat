@@ -13,7 +13,9 @@ export const config = {
   jwtSecret: env('JWT_SECRET', 'dev-only-change-me'),
   otpSecret: env('OTP_SECRET', 'dev-only-otp-secret'),
   accessTtlSec: Number(env('ACCESS_TTL_SEC', String(15 * 60))),
-  refreshTtlDays: Number(env('REFRESH_TTL_DAYS', '30')),
+  // نشست کنشگر ۹۰ روز تا پیامک ورود کمتر شود (مدل کسب‌وکار ۱۶)؛ کارکنان ستاد ۳۰ روز و رمز دوم هر ۱۲ ساعت
+  refreshTtlDays: Number(env('REFRESH_TTL_DAYS', '90')),
+  staffRefreshTtlDays: Number(env('STAFF_REFRESH_TTL_DAYS', '30')),
   cookieSecure: env('COOKIE_SECURE', 'false') === 'true',
   /** console = کد در لاگ نوشته می‌شود (توسعه)؛ kavenegar = ارسال واقعی */
   smsProvider: env('SMS_PROVIDER', 'console') as 'console' | 'kavenegar',

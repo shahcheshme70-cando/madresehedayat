@@ -8,6 +8,7 @@ import { Db, InjectDb } from '../db/db.module';
 import { coreMemberships, cores, mosques, otpRequests, roleGrants, sessions, users } from '../db/schema';
 import { RoleName } from '../common/auth.decorators';
 import { SmsSender } from '../sms/sms';
+import { Messenger } from '../messenger/messenger';
 
 const OTP_TTL_MS = 2 * 60_000;
 const RESEND_MS = 60_000;
@@ -28,13 +29,17 @@ export interface RegisterInput {
 
 @Injectable()
 export class AuthService {
-  constructor(@InjectDb() private readonly db: Db, private readonly jwt: JwtService, private readonly sms: SmsSender) {}
+  constructor(@InjectDb() private readonly db: Db, private readonly jwt: JwtService, private readonly sms: SmsSender, private readonly messenger: Messenger) {}
 
   private otpHash(mobile: string, code: string) {
     return createHmac('sha256', config.otpSecret).update(`${mobile}:${code}`).digest('hex');
   }
 
-  async requestOtp(mobile: string) {
+  /**
+   * کد ورود: اگر کاربر بله یا ایتا را وصل کرده، کد رایگان از همان‌جا می‌رود (کم کردن هزینهٔ پیامک —
+   * مدل کسب‌وکار ۱۶). با via = 'sms' یا اگر ارسال پیام‌رسان نشد، پیامک فرستاده می‌شود.
+   */
+  async requestOtp(mobile: string, via?: 'sms') {
     const hourAgo = new Date(Date.now() - 3600_000);
     const recent = await this.db.select().from(otpRequests)
       .where(and(eq(otpRequests.mobile, mobileKey(mobile)), gt(otpRequests.createdAt, hourAgo)))
@@ -48,9 +53,11 @@ export class AuthService {
     }
     const code = String(randomInt(10000, 100000));
     await this.db.insert(otpRequests).values({ mobile: mobileKey(mobile), codeHash: this.otpHash(mobile, code), expiresAt: new Date(Date.now() + OTP_TTL_MS) });
-    await this.sms.sendOtp(mobile, code);
-    const exists = !!(await this.db.query.users.findFirst({ where: eq(users.mobile, mobileKey(mobile)), columns: { id: true } }));
-    return { sent: true, resendIn: RESEND_MS / 1000, isNew: !exists, ...(config.isDev && config.smsProvider === 'console' ? { devCode: code } : {}) };
+    const user = await this.db.query.users.findFirst({ where: eq(users.mobile, mobileKey(mobile)), columns: { id: true } });
+    let channel: 'SMS' | 'BALE' | 'EITAA' = 'SMS';
+    if (user && via !== 'sms') channel = (await this.messenger.sendDirect(user.id, `کد ورود به مدرسهٔ هدایت: ${code}\nاین کد را به کسی ندهید.`)) ?? 'SMS';
+    if (channel === 'SMS') await this.sms.sendOtp(mobile, code);
+    return { sent: true, channel, resendIn: RESEND_MS / 1000, isNew: !user, ...(config.isDev && config.smsProvider === 'console' ? { devCode: code } : {}) };
   }
 
   /** شماره‌ای که منبع مطمئن دیگری (ایتا) تأییدش کرده */
@@ -128,7 +135,7 @@ export class AuthService {
     const refresh = randomBytes(32).toString('base64url');
     await this.db.insert(sessions).values({
       userId, tokenHash: sha(refresh), userAgent: userAgent?.slice(0, 200),
-      expiresAt: new Date(Date.now() + config.refreshTtlDays * 86400_000), mfaAt,
+      expiresAt: new Date(Date.now() + (roles.some((r) => r === 'HQ_ADMIN' || r === 'HQ_OPERATOR') ? config.staffRefreshTtlDays : config.refreshTtlDays) * 86400_000), mfaAt,
     });
     // رمز دوم هر ۱۲ ساعت دوباره پرسیده می‌شود
     const mfa = !!mfaAt && Date.now() - mfaAt.getTime() < 12 * 3600_000;

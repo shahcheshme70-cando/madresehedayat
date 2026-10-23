@@ -18,7 +18,7 @@ import { contactPhone, eitaaEnabled, eitaaUser, eitaaVerifyOnce, verifyEitaa } f
 const REFRESH_COOKIE = 'mh_rt';
 const EITAA_COOKIE = 'mh_eitaa';
 
-class OtpDto { @IsString() mobile: string; }
+class OtpDto { @IsString() mobile: string; @IsOptional() @IsIn(['sms']) via?: 'sms'; }
 class VerifyDto { @IsString() mobile: string; @IsString() @Length(4, 8) code: string; }
 class RegisterDto {
   @IsString() regToken: string;
@@ -57,7 +57,7 @@ export class AuthController {
 
   @Public() @Post('otp') @HttpCode(200) @Throttle({ default: { limit: 10, ttl: 60_000 } })
   requestOtp(@Body() dto: OtpDto) {
-    return this.auth.requestOtp(this.mobileOrThrow(dto.mobile));
+    return this.auth.requestOtp(this.mobileOrThrow(dto.mobile), dto.via);
   }
 
   @Public() @Post('verify') @HttpCode(200) @Throttle({ default: { limit: 20, ttl: 60_000 } })

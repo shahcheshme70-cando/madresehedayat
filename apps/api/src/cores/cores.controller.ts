@@ -11,6 +11,7 @@ import { pgArr } from '../db/id';
 import { coreMemberships, cores, mosques, networkMembers, networks, roleGrants, users } from '../db/schema';
 import { Notifier } from '../notifications/notifications';
 import { RahyarService } from '../rahyar/rahyar.service';
+import { Business } from '../business/business';
 
 const ALPHA = '23456789abcdefghjkmnpqrstuvwxyz';
 const code = (p: string) => p + Array.from({ length: 7 }, () => ALPHA[randomInt(ALPHA.length)]).join('');
@@ -29,7 +30,7 @@ class MobilesDto { @IsArray() @ArrayMaxSize(2000) @IsString({ each: true }) mobi
  */
 @Controller()
 export class CoresController {
-  constructor(@InjectDb() private readonly db: Db, private readonly rahyar: RahyarService, private readonly notify: Notifier, private readonly access: AccessLog) {}
+  constructor(@InjectDb() private readonly db: Db, private readonly rahyar: RahyarService, private readonly notify: Notifier, private readonly access: AccessLog, private readonly business: Business) {}
 
   private async summary(ids: string[]) {
     if (!ids.length) return new Map<string, { active: number; done: number; attended: number; last: string | null }>();
@@ -161,6 +162,9 @@ export class CoresController {
     const c = d.code.trim().toLowerCase();
     const core = await this.db.query.cores.findFirst({ where: eq(cores.inviteCode, c) });
     if (core) {
+      // هستهٔ یک سازمان مشترک: سقف نفرات اشتراک
+      const net = await this.db.query.networks.findFirst({ where: eq(networks.id, core.networkId) });
+      if (net?.kind === 'ORGANIZATION') await this.business.assertSeats(net.id, [u.id]);
       await this.db.insert(coreMemberships).values({ coreId: core.id, userId: u.id }).onConflictDoNothing();
       if (core.leaderId) await this.notify.send(core.leaderId, { kind: 'core_join', title: `عضو تازه در هستهٔ «${core.name}»`, link: `/cores/${core.id}` });
       return { joined: 'core', id: core.id, name: core.name };
@@ -230,36 +234,36 @@ export class CoresController {
 
   // ───────── سازمان مشترک ─────────
 
-  private async orgAccess(u: AuthUser, networkId: string) {
-    if (u.roles.includes('HQ_ADMIN')) return;
-    const g = await this.db.query.roleGrants.findFirst({ where: and(eq(roleGrants.userId, u.id), eq(roleGrants.role, 'ORG_ADMIN'), eq(roleGrants.networkId, networkId)) });
-    if (!g) throw new ForbiddenException({ code: 'forbidden', message: 'مدیر این سازمان نیستید' });
-  }
+  /** پنل سازمان فقط با اشتراک فعال باز است (مدل کسب‌وکار) */
+  private orgAccess(u: AuthUser, networkId: string) { return this.business.orgGate(u, networkId, 'orgPanel'); }
 
   @Get('org')
   async orgs(@CurrentUser() u: AuthUser) {
     const gs = await this.db.select({ networkId: roleGrants.networkId }).from(roleGrants).where(and(eq(roleGrants.userId, u.id), eq(roleGrants.role, 'ORG_ADMIN')));
     const ids = gs.map((g) => g.networkId).filter(Boolean) as string[];
     if (!ids.length) return [];
-    return this.db.select().from(networks).where(inArray(networks.id, ids));
+    const nets = await this.db.select().from(networks).where(inArray(networks.id, ids));
+    return Promise.all(nets.map(async (n) => ({ ...n, subscription: await this.business.summary(n.id) })));
   }
 
   @Get('org/:id')
   async org(@CurrentUser() u: AuthUser, @Param('id') id: string) {
-    await this.orgAccess(u, id);
+    const g = await this.orgAccess(u, id);
     this.access.write(u.id, 'org.view', null);
     const net = await this.db.query.networks.findFirst({ where: eq(networks.id, id) });
     if (!net) throw new NotFoundException({ code: 'no_org', message: 'سازمان پیدا نشد' });
     const direct = await this.db.select({ userId: networkMembers.userId }).from(networkMembers).where(eq(networkMembers.networkId, id));
     const viaCores = await this.db.select({ userId: coreMemberships.userId }).from(coreMemberships).innerJoin(cores, eq(cores.id, coreMemberships.coreId)).where(eq(cores.networkId, id));
     const ids = [...new Set([...direct, ...viaCores].map((x) => x.userId))];
-    const courseRows = await this.db.execute<{ id: string; title: string }>(sql`select distinct c.id, c.title from access_grants g join courses c on c.id = g.course_id where g.network_id = ${id}`);
+    const courseRows = await this.db.execute<{ id: string; title: string }>(sql`select distinct c.id, c.title from courses c where c.id in (
+      select course_id from access_grants where network_id = ${id} and (expires_at is null or expires_at > now())
+      union select course_id from subscription_courses where subscription_id = ${g.sub.id}) order by c.title`);
     const courseIds = courseRows.rows.map((c) => c.id);
     const prog = ids.length && courseIds.length ? await this.db.execute<{ user_id: string; course_id: string; completed_at: string | null }>(sql`
       select user_id, course_id, completed_at from enrollments where user_id = any(${pgArr(ids)}::text[]) and course_id = any(${pgArr(courseIds)}::text[])`) : { rows: [] as any[] };
     const people = ids.length ? await this.db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName }).from(users).where(inArray(users.id, ids)) : [];
     return {
-      id: net.id, name: net.name, underRahyar: net.underRahyar, courses: courseRows.rows,
+      id: net.id, name: net.name, underRahyar: net.underRahyar, courses: courseRows.rows, subscription: await this.business.summary(id),
       members: people.map((p) => ({ id: p.id, name: `${p.firstName} ${p.lastName}`,
         courses: courseIds.map((cid) => { const e = prog.rows.find((r: any) => r.user_id === p.id && r.course_id === cid); return { courseId: cid, state: e ? (e.completed_at ? 'done' : 'active') : 'none' }; }) })),
     };
@@ -270,6 +274,7 @@ export class CoresController {
     await this.orgAccess(u, id);
     const norm = d.mobiles.map((m) => normalizeMobile(m)).filter(Boolean) as string[];
     const found = norm.length ? await this.db.select({ id: users.id, mobile: users.mobile }).from(users).where(inArray(users.mobile, norm.map(mobileKey))) : [];
+    await this.business.assertSeats(id, found.map((f) => f.id));
     for (const f of found) await this.db.insert(networkMembers).values({ networkId: id, userId: f.id }).onConflictDoNothing();
     const net = await this.db.query.networks.findFirst({ where: eq(networks.id, id) });
     await this.notify.send(found.map((f) => f.id), { kind: 'org_join', title: `به اشتراک «${net?.name}» اضافه شدید`, body: 'دوره‌های این اشتراک حالا برایتان باز است.', link: '/learn' });

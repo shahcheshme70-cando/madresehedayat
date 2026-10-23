@@ -5,8 +5,10 @@ import { and, asc, count, desc, eq, gte, inArray, isNull, or, sql } from 'drizzl
 import { AuthUser, CurrentUser, Roles } from '../common/auth.decorators';
 import { dec, enc } from '../common/crypto';
 import { Db, InjectDb } from '../db/db.module';
-import { campaignCores, campaignDone, campaignMembers, campaignTasks, campaigns, coreMemberships, cores, counties, provinces, rahyarPositions, users } from '../db/schema';
+import { campaignCores, campaignDone, campaignMembers, campaignTasks, campaigns, coreMemberships, cores, counties, networks, provinces, rahyarPositions, roleGrants, users } from '../db/schema';
 import { Notifier } from '../notifications/notifications';
+import { Business } from '../business/business';
+import { Plan } from '../business/plans';
 
 class TaskDto {
   @IsOptional() @IsString() id?: string;
@@ -17,8 +19,9 @@ class CampaignDto {
   @IsString() @Length(3, 120) title: string;
   @IsString() @Length(10, 400) summary: string;
   @IsOptional() @IsString() @Length(0, 6000) body?: string;
-  @IsIn(['NATIONAL', 'PROVINCE']) scope: 'NATIONAL' | 'PROVINCE';
+  @IsIn(['NATIONAL', 'PROVINCE', 'ORG']) scope: 'NATIONAL' | 'PROVINCE' | 'ORG';
   @IsOptional() @IsString() provinceId?: string;
+  @IsOptional() @IsString() networkId?: string;
   @IsOptional() @IsInt() @Min(1) @Max(10_000_000) goal?: number;
   @IsDateString() startsAt: string;
   @IsDateString() endsAt: string;
@@ -36,7 +39,7 @@ const err = (code: string, message: string) => ({ code, message });
  */
 @Injectable()
 export class Campaigns {
-  constructor(@InjectDb() private readonly db: Db, private readonly notify: Notifier) {}
+  constructor(@InjectDb() private readonly db: Db, private readonly notify: Notifier, private readonly business: Business) {}
 
   private isHq = (u: AuthUser) => u.roles.includes('HQ_ADMIN') || u.roles.includes('HQ_OPERATOR');
 
@@ -58,15 +61,16 @@ export class Campaigns {
     return c;
   }
 
-  private async assertCanManage(u: AuthUser, c: { scope: string; provinceId: string | null; createdById: string }) {
+  private async assertCanManage(u: AuthUser, c: { scope: string; provinceId: string | null; networkId?: string | null; createdById: string }) {
     if (this.isHq(u)) return;
     if (c.scope === 'PROVINCE' && c.provinceId && (await this.myProvinces(u.id)).includes(c.provinceId)) return;
+    if (c.scope === 'ORG' && c.networkId) { await this.business.orgGate(u, c.networkId, 'campaigns'); return; }
     throw new ForbiddenException(err('forbidden', 'مدیریت این پویش با شما نیست؛ پویش استانی را فقط راهیار همان استان یا ستاد ویرایش می‌کند'));
   }
 
-  /** آیا کاربر این پویش را می‌بیند؟ (کشوری: همه؛ استانی: ساکنان استان) */
-  private visible(c: typeof campaigns.$inferSelect, prov: string | null) {
-    return c.status !== 'DRAFT' && (c.scope === 'NATIONAL' || c.provinceId === prov);
+  /** آیا کاربر این پویش را می‌بیند؟ (کشوری: همه؛ استانی: ساکنان استان؛ سازمانی: اعضای سازمان) */
+  private visible(c: typeof campaigns.$inferSelect, prov: string | null, orgs: string[] = []) {
+    return c.status !== 'DRAFT' && (c.scope === 'NATIONAL' || (c.scope === 'PROVINCE' && c.provinceId === prov) || (c.scope === 'ORG' && !!c.networkId && orgs.includes(c.networkId)));
   }
 
   private phase(c: { startsAt: Date; endsAt: Date; status: string }) {
@@ -80,9 +84,11 @@ export class Campaigns {
 
   async list(u: AuthUser) {
     const prov = await this.provinceOf(u.id);
+    const orgs = await this.business.orgsOfUser(u.id);
     const recent = new Date(Date.now() - 60 * 864e5);
     const rows = await this.db.select().from(campaigns)
-      .where(and(eq(campaigns.status, 'PUBLISHED'), gte(campaigns.endsAt, recent), or(eq(campaigns.scope, 'NATIONAL'), prov ? eq(campaigns.provinceId, prov) : sql`false`)))
+      .where(and(eq(campaigns.status, 'PUBLISHED'), gte(campaigns.endsAt, recent), or(eq(campaigns.scope, 'NATIONAL'),
+        prov ? and(eq(campaigns.scope, 'PROVINCE'), eq(campaigns.provinceId, prov)) : sql`false`, orgs.length ? and(eq(campaigns.scope, 'ORG'), inArray(campaigns.networkId, orgs)) : sql`false`)))
       .orderBy(asc(campaigns.endsAt));
     if (!rows.length) return [];
     const ids = rows.map((r) => r.id);
@@ -93,11 +99,19 @@ export class Campaigns {
     const tasks = await this.db.select({ c: campaignTasks.campaignId, n: count() }).from(campaignTasks).where(inArray(campaignTasks.campaignId, ids)).groupBy(campaignTasks.campaignId);
     const m = (a: { c: string; n: number }[], id: string) => a.find((x) => x.c === id)?.n ?? 0;
     const pn = await this.provinceNames();
+    const on = await this.orgNames(rows.map((r) => r.networkId));
     return rows.map((c) => ({
-      id: c.id, title: c.title, summary: c.summary, scope: c.scope, province: c.provinceId ? pn[c.provinceId] : null, goal: c.goal,
+      id: c.id, title: c.title, summary: c.summary, scope: c.scope, province: c.provinceId ? pn[c.provinceId] : null, org: c.networkId ? on[c.networkId] : null, goal: c.goal,
       startsAt: c.startsAt, endsAt: c.endsAt, phase: this.phase(c),
       members: m(members, c.id), done: m(done, c.id), tasks: m(tasks, c.id), joined: mine.some((x) => x.c === c.id), myDone: m(myDone, c.id),
     }));
+  }
+
+  private async orgNames(ids: (string | null)[]) {
+    const x = ids.filter(Boolean) as string[];
+    if (!x.length) return {} as Record<string, string>;
+    const r = await this.db.select({ id: networks.id, name: networks.name }).from(networks).where(inArray(networks.id, x));
+    return Object.fromEntries(r.map((n) => [n.id, n.name])) as Record<string, string>;
   }
 
   private async provinceNames() {
@@ -122,7 +136,7 @@ export class Campaigns {
     const c = await this.get(id);
     const prov = await this.provinceOf(u.id);
     const manage = await this.assertCanManage(u, c).then(() => true, () => false);
-    if (!this.visible(c, prov) && !manage) throw new NotFoundException(err('no_campaign', 'این پویش پیدا نشد یا برای استان شما نیست'));
+    if (!this.visible(c, prov, await this.business.orgsOfUser(u.id)) && !manage) throw new NotFoundException(err('no_campaign', 'این پویش پیدا نشد یا برای استان شما نیست'));
     const tasks = await this.db.select().from(campaignTasks).where(eq(campaignTasks.campaignId, id)).orderBy(asc(campaignTasks.order));
     const me = await this.db.query.campaignMembers.findFirst({ where: and(eq(campaignMembers.campaignId, id), eq(campaignMembers.userId, u.id)) });
     const mine = await this.db.select().from(campaignDone).where(and(eq(campaignDone.campaignId, id), eq(campaignDone.userId, u.id)));
@@ -134,10 +148,11 @@ export class Campaigns {
     const pn = await this.provinceNames();
     return {
       id: c.id, title: c.title, summary: c.summary, body: c.body, scope: c.scope, provinceId: c.provinceId, province: c.provinceId ? pn[c.provinceId] : null,
+      networkId: c.networkId, org: c.networkId ? (await this.orgNames([c.networkId]))[c.networkId] : null,
       goal: c.goal, startsAt: c.startsAt, endsAt: c.endsAt, status: c.status, phase: this.phase(c), canManage: manage,
       joined: !!me, viaCore, badge: mine.length > 0,
       tasks: tasks.map((x) => { const d = mine.find((m) => m.taskId === x.id); return { id: x.id, title: x.title, body: x.body, count: t.perTask[x.id] ?? 0, done: !!d, note: d ? dec(d.note) : null, doneAt: d?.doneAt ?? null }; }),
-      totals: { members: t.members, done: t.done, cores: t.cores }, map: c.scope === 'NATIONAL' ? t.map : t.map.filter((p) => p.id === c.provinceId),
+      totals: { members: t.members, done: t.done, cores: t.cores }, map: c.scope === 'NATIONAL' ? t.map : c.scope === 'ORG' ? t.map.filter((p) => p.members > 0) : t.map.filter((p) => p.id === c.provinceId),
       cores: led,
     };
   }
@@ -153,8 +168,9 @@ export class Campaigns {
   private async addMembers(c: typeof campaigns.$inferSelect, userIds: string[], coreId: string | null) {
     if (!userIds.length) return [];
     const rows = await this.db.select({ id: users.id, p: counties.provinceId }).from(users).leftJoin(counties, eq(counties.id, users.countyId)).where(inArray(users.id, userIds));
-    // پویش استانی فقط برای ساکنان همان استان
-    const ok = rows.filter((r) => c.scope === 'NATIONAL' || r.p === c.provinceId);
+    // پویش استانی فقط برای ساکنان همان استان؛ پویش سازمانی فقط برای اعضای همان سازمان
+    const orgMembers = c.scope === 'ORG' && c.networkId ? new Set(await this.business.memberIds(c.networkId)) : null;
+    const ok = rows.filter((r) => c.scope === 'NATIONAL' || (c.scope === 'PROVINCE' && r.p === c.provinceId) || (orgMembers?.has(r.id) ?? false));
     if (!ok.length) return [];
     const ins = await this.db.insert(campaignMembers).values(ok.map((r) => ({ campaignId: c.id, userId: r.id, coreId, provinceId: r.p }))).onConflictDoNothing().returning({ id: campaignMembers.userId });
     return ins.map((x) => x.id);
@@ -162,7 +178,7 @@ export class Campaigns {
 
   async join(u: AuthUser, id: string) {
     const c = await this.get(id);
-    if (!this.visible(c, await this.provinceOf(u.id))) throw new ForbiddenException(err('other_province', 'این پویش استانی است و فقط ساکنان همان استان می‌توانند بپیوندند'));
+    if (!this.visible(c, await this.provinceOf(u.id), await this.business.orgsOfUser(u.id))) throw new ForbiddenException(c.scope === 'ORG' ? err('other_org', 'این پویش ویژهٔ اعضای یک سازمان است') : err('other_province', 'این پویش استانی است و فقط ساکنان همان استان می‌توانند بپیوندند'));
     this.assertOpen(c, true);
     await this.addMembers(c, [u.id], null);
     return { ok: true };
@@ -223,14 +239,22 @@ export class Campaigns {
     const hq = this.isHq(u);
     const pn = await this.provinceNames();
     const mine = hq ? Object.keys(pn) : await this.myProvinces(u.id);
-    return { national: hq, provinces: mine.map((id) => ({ id, name: pn[id] })).sort((a, b) => a.name.localeCompare(b.name, 'fa')) };
+    const orgs: { id: string; name: string }[] = [];
+    for (const g of await this.db.select({ id: roleGrants.networkId }).from(roleGrants).where(and(eq(roleGrants.userId, u.id), eq(roleGrants.role, 'ORG_ADMIN')))) {
+      const ok = g.id ? await this.business.orgGate(u, g.id, 'campaigns').catch(() => null) : null;
+      if (ok) orgs.push({ id: ok.net.id, name: ok.net.name });
+    }
+    return { national: hq, provinces: mine.map((id) => ({ id, name: pn[id] })).sort((a, b) => a.name.localeCompare(b.name, 'fa')), orgs };
   }
 
   async managed(u: AuthUser) {
     const hq = this.isHq(u);
     const mine = hq ? [] : await this.myProvinces(u.id);
-    if (!hq && !mine.length) throw new ForbiddenException(err('forbidden', 'ساختن پویش برای ستاد و راهیاران استانی است'));
-    const rows = await this.db.select().from(campaigns).where(hq ? undefined : and(eq(campaigns.scope, 'PROVINCE'), inArray(campaigns.provinceId, mine))).orderBy(desc(campaigns.createdAt));
+    const orgs = hq ? [] : (await this.manageOptions(u)).orgs.map((o) => o.id);
+    if (!hq && !mine.length && !orgs.length) throw new ForbiddenException(err('forbidden', 'ساختن پویش برای ستاد، راهیاران استانی و مدیران سازمان‌های مشترک است'));
+    const rows = await this.db.select().from(campaigns).where(hq ? undefined : or(
+      mine.length ? and(eq(campaigns.scope, 'PROVINCE'), inArray(campaigns.provinceId, mine)) : sql`false`,
+      orgs.length ? and(eq(campaigns.scope, 'ORG'), inArray(campaigns.networkId, orgs)) : sql`false`)).orderBy(desc(campaigns.createdAt));
     const pn = await this.provinceNames();
     const out = [];
     for (const c of rows) { const t = await this.totals(c); out.push({ id: c.id, title: c.title, scope: c.scope, province: c.provinceId ? pn[c.provinceId] : null, status: c.status, phase: this.phase(c), startsAt: c.startsAt, endsAt: c.endsAt, goal: c.goal, members: t.members, done: t.done }); }
@@ -242,6 +266,11 @@ export class Campaigns {
     if (e <= s) throw new BadRequestException(err('bad_dates', 'تاریخ پایان باید بعد از تاریخ شروع باشد'));
     if (e.getTime() - s.getTime() > 120 * 864e5) throw new BadRequestException(err('too_long', 'پویش حداکثر ۱۲۰ روز است؛ برای حرکت بلندتر چند پویش پشت‌سرهم بسازید'));
     if (d.scope === 'NATIONAL' && !this.isHq(u)) throw new ForbiddenException(err('forbidden', 'پویش کشوری را فقط ستاد می‌سازد؛ شما می‌توانید پویش استانی بسازید'));
+    if (d.scope === 'ORG') {
+      if (!d.networkId) throw new BadRequestException(err('no_org', 'سازمان پویش را انتخاب کنید'));
+      const g = await this.business.orgGate(u, d.networkId, 'campaigns');
+      return g.plan;
+    }
     if (d.scope === 'PROVINCE') {
       if (!d.provinceId) throw new BadRequestException(err('no_province', 'استان پویش را انتخاب کنید'));
       if (!this.isHq(u) && !(await this.myProvinces(u.id)).includes(d.provinceId)) throw new ForbiddenException(err('forbidden', 'فقط برای استانی که راهیار آن هستید می‌توانید پویش بسازید'));
@@ -249,9 +278,10 @@ export class Campaigns {
   }
 
   async create(u: AuthUser, d: CampaignDto) {
-    await this.validate(u, d);
+    const plan = await this.validate(u, d);
+    if (d.scope === 'ORG' && plan) await this.business.assertCampaignQuota(d.networkId!, plan as Plan);
     return this.db.transaction(async (tx) => {
-      const [c] = await tx.insert(campaigns).values({ title: d.title.trim(), summary: d.summary.trim(), body: d.body?.trim() || null, scope: d.scope, provinceId: d.scope === 'PROVINCE' ? d.provinceId! : null,
+      const [c] = await tx.insert(campaigns).values({ title: d.title.trim(), summary: d.summary.trim(), body: d.body?.trim() || null, scope: d.scope, provinceId: d.scope === 'PROVINCE' ? d.provinceId! : null, networkId: d.scope === 'ORG' ? d.networkId! : null,
         goal: d.goal ?? null, startsAt: new Date(d.startsAt), endsAt: new Date(d.endsAt), createdById: u.id }).returning();
       await tx.insert(campaignTasks).values(d.tasks.map((t, i) => ({ campaignId: c.id, order: i, title: t.title.trim(), body: t.body?.trim() || null })));
       return { id: c.id };
@@ -262,9 +292,9 @@ export class Campaigns {
     const c = await this.get(id);
     await this.assertCanManage(u, c);
     await this.validate(u, d);
-    if (c.status === 'PUBLISHED' && (d.scope !== c.scope || (d.provinceId ?? null) !== c.provinceId)) throw new BadRequestException(err('scope_locked', 'دامنهٔ پویش منتشرشده عوض نمی‌شود؛ چون کسانی پیوسته‌اند'));
+    if (c.status === 'PUBLISHED' && (d.scope !== c.scope || (d.scope === 'PROVINCE' && (d.provinceId ?? null) !== c.provinceId) || (d.scope === 'ORG' && (d.networkId ?? null) !== c.networkId))) throw new BadRequestException(err('scope_locked', 'دامنهٔ پویش منتشرشده عوض نمی‌شود؛ چون کسانی پیوسته‌اند'));
     await this.db.transaction(async (tx) => {
-      await tx.update(campaigns).set({ title: d.title.trim(), summary: d.summary.trim(), body: d.body?.trim() || null, scope: d.scope, provinceId: d.scope === 'PROVINCE' ? d.provinceId! : null,
+      await tx.update(campaigns).set({ title: d.title.trim(), summary: d.summary.trim(), body: d.body?.trim() || null, scope: d.scope, provinceId: d.scope === 'PROVINCE' ? d.provinceId! : null, networkId: d.scope === 'ORG' ? d.networkId! : null,
         goal: d.goal ?? null, startsAt: new Date(d.startsAt), endsAt: new Date(d.endsAt) }).where(eq(campaigns.id, id));
       const old = await tx.select().from(campaignTasks).where(eq(campaignTasks.campaignId, id));
       const keep = new Set(d.tasks.map((t) => t.id).filter(Boolean));
@@ -289,7 +319,7 @@ export class Campaigns {
     const t = await this.totals(c);
     const perDay = await this.db.execute<{ day: string; n: number }>(sql`select to_char(done_at at time zone 'Asia/Tehran', 'YYYY-MM-DD') as day, count(*)::int as n from campaign_done where campaign_id = ${id} group by 1 order by 1`);
     return { ...c, phase: this.phase(c), tasks: tasks.map((x) => ({ id: x.id, title: x.title, body: x.body, count: t.perTask[x.id] ?? 0 })),
-      totals: { members: t.members, done: t.done, cores: t.cores }, map: c.scope === 'NATIONAL' ? t.map : t.map.filter((p) => p.id === c.provinceId), perDay: perDay.rows };
+      totals: { members: t.members, done: t.done, cores: t.cores }, map: c.scope === 'NATIONAL' ? t.map : c.scope === 'ORG' ? t.map.filter((p) => p.members > 0) : t.map.filter((p) => p.id === c.provinceId), perDay: perDay.rows };
   }
 
   /** انتشار + اعلان به مخاطبان (کشوری: همه، استانی: ساکنان استان) */
@@ -299,9 +329,9 @@ export class Campaigns {
     if (c.status !== 'DRAFT') throw new BadRequestException(err('not_draft', 'این پویش پیش‌تر منتشر یا لغو شده است'));
     if (c.endsAt.getTime() < Date.now()) throw new BadRequestException(err('campaign_ended', 'تاریخ پایان گذشته است؛ اول تاریخ‌ها را درست کنید'));
     await this.db.update(campaigns).set({ status: 'PUBLISHED' }).where(eq(campaigns.id, id));
-    const where = c.scope === 'NATIONAL' ? eq(users.isActive, true)
-      : and(eq(users.isActive, true), inArray(users.countyId, this.db.select({ id: counties.id }).from(counties).where(eq(counties.provinceId, c.provinceId!))));
-    const ids = (await this.db.select({ id: users.id }).from(users).where(where)).map((r) => r.id);
+    const ids = c.scope === 'ORG' ? await this.business.memberIds(c.networkId!)
+      : (await this.db.select({ id: users.id }).from(users).where(c.scope === 'NATIONAL' ? eq(users.isActive, true)
+        : and(eq(users.isActive, true), inArray(users.countyId, this.db.select({ id: counties.id }).from(counties).where(eq(counties.provinceId, c.provinceId!)))))).map((r) => r.id);
     await this.notify.send(ids, { kind: 'campaign', title: `پویش تازه: ${c.title}`, body: c.summary, link: `/campaigns/${id}` });
     return { ok: true, notified: ids.length };
   }
@@ -331,7 +361,7 @@ export class CampaignsController {
 
   @Get('manage/campaigns/options') options(@CurrentUser() u: AuthUser) { return this.c.manageOptions(u); }
   @Get('manage/campaigns') managed(@CurrentUser() u: AuthUser) { return this.c.managed(u); }
-  @Post('manage/campaigns') @Roles('HQ_ADMIN', 'HQ_OPERATOR', 'RAHYAR') create(@CurrentUser() u: AuthUser, @Body() d: CampaignDto) { return this.c.create(u, d); }
+  @Post('manage/campaigns') create(@CurrentUser() u: AuthUser, @Body() d: CampaignDto) { return this.c.create(u, d); }
   @Get('manage/campaigns/:id') mdetail(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.c.manageDetail(u, id); }
   @Patch('manage/campaigns/:id') update(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() d: CampaignDto) { return this.c.update(u, id, d); }
   @Post('manage/campaigns/:id/publish') @HttpCode(200) publish(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.c.publish(u, id); }

@@ -50,6 +50,13 @@
       "when": 1792775720659,
       "tag": "0006_campaigns",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792778330279,
+      "tag": "0007_business",
+      "breakpoints": true
     }
   ]
 }

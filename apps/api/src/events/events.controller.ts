@@ -9,6 +9,7 @@ import { privateFiles } from '../db/schema';
 import { FileStore } from '../files/files.controller';
 import { MissionsService } from '../rahyar/missions.service';
 import { Messenger } from '../messenger/messenger';
+import { Business } from '../business/business';
 import { EventInput, EventsService } from './events.service';
 
 class GroupDto { @IsString() coreId: string; @IsArray() @ArrayMaxSize(200) @IsString({ each: true }) userIds: string[]; }
@@ -41,9 +42,11 @@ export class EventsController {
   }
 
   // ───────── برگزارکننده ─────────
-  @Get('manage/events') @Roles('HQ_ADMIN', 'HQ_OPERATOR', 'RAHYAR', 'INSTRUCTOR')
+  @Get('manage/events/options')
+  async options(@CurrentUser() u: AuthUser) { return { open: this.svc.canCreate(u, 'IN_PERSON') ? 'ALL' : this.svc.canCreate(u, 'ONLINE') ? 'ONLINE' : null, scoped: await this.svc.scopedOptions(u) }; }
+  @Get('manage/events')
   managed(@CurrentUser() u: AuthUser) { return this.svc.managed(u); }
-  @Post('manage/events') @Roles('HQ_ADMIN', 'HQ_OPERATOR', 'RAHYAR', 'INSTRUCTOR')
+  @Post('manage/events')
   create(@CurrentUser() u: AuthUser, @Body() d: EventInput) { return this.svc.create(u, d); }
   @Get('manage/events/:id') async registrants(@CurrentUser() u: AuthUser, @Param('id') id: string) { const r = await this.svc.registrants(u, id); this.access.write(u.id, 'event.people', null); return r; }
   @Patch('manage/events/:id') update(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() d: EventInput & { notify?: boolean }) { return this.svc.update(u, id, d); }
@@ -70,7 +73,7 @@ export class Scheduler implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('Scheduler');
   private timers: NodeJS.Timeout[] = [];
   constructor(private readonly events: EventsService, private readonly missions: MissionsService, private readonly store: FileStore, @InjectDb() private readonly db: Db,
-    private readonly messenger: Messenger, private readonly access: AccessLog) {}
+    private readonly messenger: Messenger, private readonly access: AccessLog, private readonly business: Business) {}
 
   onModuleInit() {
     if (process.env.SCHEDULER === 'off') return;
@@ -79,10 +82,11 @@ export class Scheduler implements OnModuleInit, OnModuleDestroy {
     this.timers.push(setInterval(safe('escalate', () => this.missions.escalate()), 3600_000));
     this.timers.push(setInterval(safe('expire', () => this.expire()), 3600_000));
     this.timers.push(setInterval(safe('purge', () => this.access.purge()), 24 * 3600_000));
+    this.timers.push(setInterval(safe('subscriptions', () => this.business.remindExpiry()), 6 * 3600_000));
     // کد اتصال بله؛ اگر بات تنظیم نشده باشد کاری نمی‌کند
     let polling = false;
     this.timers.push(setInterval(() => { if (polling || !this.messenger.baleEnabled) return; polling = true; this.messenger.poll().catch((e) => this.log.warn(`بله: ${e?.message ?? e}`)).finally(() => (polling = false)); }, 4000));
-    setTimeout(safe('first', async () => { await this.events.sendReminders(); await this.missions.escalate(); await this.expire(); }), 5_000);
+    setTimeout(safe('first', async () => { await this.events.sendReminders(); await this.missions.escalate(); await this.expire(); await this.business.remindExpiry(); }), 5_000);
   }
   onModuleDestroy() { this.timers.forEach(clearInterval); }
 

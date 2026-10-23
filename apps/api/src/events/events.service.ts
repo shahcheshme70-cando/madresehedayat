@@ -4,7 +4,8 @@ import { randomInt } from 'node:crypto';
 import { AuthUser } from '../common/auth.decorators';
 import { Db, InjectDb } from '../db/db.module';
 import { pgArr } from '../db/id';
-import { coreMemberships, cores, eventReminders, events, registrations, users } from '../db/schema';
+import { coreMemberships, cores, eventReminders, events, mosques, networks, registrations, roleGrants, users } from '../db/schema';
+import { Business } from '../business/business';
 import { Notifier } from '../notifications/notifications';
 
 const ALPHA = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -19,13 +20,40 @@ type Ev = typeof events.$inferSelect;
 @Injectable()
 export class EventsService {
   private readonly log = new Logger('Events');
-  constructor(@InjectDb() private readonly db: Db, private readonly notify: Notifier) {}
+  constructor(@InjectDb() private readonly db: Db, private readonly notify: Notifier, private readonly business: Business) {}
 
   // ───────── دسترسی ─────────
   canCreate(u: AuthUser, kind?: string) {
     if (HQ(u) || u.roles.includes('RAHYAR')) return true;
     if (u.roles.includes('INSTRUCTOR')) return kind === 'ONLINE';
     return false;
+  }
+
+  /**
+   * برگزارکنندگان محدود (مدل کسب‌وکار): مدیر سازمان با بسته‌ای که «برگزاری برنامه» دارد، امام برای اعضای مسجدش،
+   * مسئول هسته برای اعضای هسته‌اش. برنامه‌شان فقط برای همان اعضا دیده و ثبت‌نام می‌شود.
+   */
+  async scopedOptions(u: AuthUser) {
+    const out: { kind: 'ORG' | 'MOSQUE' | 'CORE'; id: string; label: string }[] = [];
+    for (const g of await this.db.select({ id: roleGrants.networkId }).from(roleGrants).where(and(eq(roleGrants.userId, u.id), eq(roleGrants.role, 'ORG_ADMIN')))) {
+      const ok = g.id ? await this.business.orgGate(u, g.id, 'events').catch(() => null) : null;
+      if (ok) out.push({ kind: 'ORG', id: ok.net.id, label: `اعضای ${ok.net.name}` });
+    }
+    for (const m of await this.db.select({ id: mosques.id, name: mosques.name }).from(mosques).where(eq(mosques.imamId, u.id))) out.push({ kind: 'MOSQUE', id: m.id, label: `اعضای ${m.name}` });
+    for (const c of await this.db.select({ id: cores.id, name: cores.name }).from(cores).where(eq(cores.leaderId, u.id))) out.push({ kind: 'CORE', id: c.id, label: `هستهٔ «${c.name}»` });
+    return out;
+  }
+  private async assertScope(u: AuthUser, v: EventInput, creating: boolean) {
+    const scoped = [v.audienceNetworkId, v.audienceMosqueId, v.audienceCoreId].filter(Boolean);
+    if (scoped.length > 1) throw new BadRequestException({ code: 'bad_audience', message: 'مخاطب برنامه فقط یکی از این‌ها است: سازمان، مسجد یا هسته' });
+    if (this.canCreate(u, v.kind ?? undefined) && !scoped.length) return;
+    if (creating && !scoped.length) {
+      const opts = await this.scopedOptions(u);
+      throw new ForbiddenException({ code: 'forbidden', message: opts.length ? 'مخاطب برنامه را انتخاب کنید: اعضای سازمان، مسجد یا هستهٔ خودتان' : 'اجازهٔ ساخت برنامه ندارید' });
+    }
+    if (v.audienceNetworkId) await this.business.orgGate(u, v.audienceNetworkId, 'events');
+    if (v.audienceMosqueId && !HQ(u)) { const m = await this.db.query.mosques.findFirst({ where: eq(mosques.id, v.audienceMosqueId) }); if (m?.imamId !== u.id) throw new ForbiddenException({ code: 'forbidden', message: 'فقط امام همین مسجد برای اعضایش برنامه می‌گذارد' }); }
+    if (v.audienceCoreId && !HQ(u)) { const c = await this.db.query.cores.findFirst({ where: eq(cores.id, v.audienceCoreId) }); if (c?.leaderId !== u.id) throw new ForbiddenException({ code: 'forbidden', message: 'فقط مسئول همین هسته برای اعضایش برنامه می‌گذارد' }); }
   }
   private canManage(u: AuthUser, e: Ev) { return HQ(u) || e.createdById === u.id; }
   private async get(id: string) {
@@ -42,10 +70,18 @@ export class EventsService {
   private async who(userId: string) {
     const r = await this.db.execute<{ gender: string | null; countyId: string | null; provinceId: string | null }>(sql`
       select u.gender, u.county_id as "countyId", c.province_id as "provinceId" from users u left join counties c on c.id = u.county_id where u.id = ${userId}`);
-    return r.rows[0] ?? { gender: null, countyId: null, provinceId: null };
+    const base = r.rows[0] ?? { gender: null, countyId: null, provinceId: null };
+    const orgs = await this.business.orgsOfUser(userId);
+    const cs = await this.db.select({ id: cores.id, mosqueId: cores.mosqueId }).from(coreMemberships).innerJoin(cores, eq(cores.id, coreMemberships.coreId)).where(eq(coreMemberships.userId, userId));
+    const u = await this.db.query.users.findFirst({ where: eq(users.id, userId), columns: { mosqueId: true } });
+    const mos = await this.db.select({ id: mosques.id }).from(mosques).where(eq(mosques.imamId, userId));
+    return { ...base, orgs, cores: cs.map((c) => c.id), mosques: [...new Set([u?.mosqueId, ...cs.map((c) => c.mosqueId), ...mos.map((m) => m.id)].filter(Boolean) as string[])] };
   }
 
-  private audienceOk(e: Ev, me: { gender: string | null; provinceId: string | null; countyId: string | null }) {
+  private audienceOk(e: Ev, me: { gender: string | null; provinceId: string | null; countyId: string | null; orgs?: string[]; mosques?: string[]; cores?: string[] }) {
+    if (e.audienceNetworkId && !me.orgs?.includes(e.audienceNetworkId)) return 'این برنامه ویژهٔ اعضای یک سازمان است';
+    if (e.audienceMosqueId && !me.mosques?.includes(e.audienceMosqueId)) return 'این برنامه ویژهٔ اعضای یک مسجد است';
+    if (e.audienceCoreId && !me.cores?.includes(e.audienceCoreId)) return 'این برنامه ویژهٔ اعضای یک هسته است';
     if (e.audienceGender && me.gender !== e.audienceGender) return 'این برنامه برای ' + (e.audienceGender === 'FEMALE' ? 'خواهران' : 'برادران') + ' است';
     if (e.audienceCountyId && me.countyId !== e.audienceCountyId) return 'این برنامه برای شهرستان دیگری است';
     if (e.audienceProvinceId && me.provinceId !== e.audienceProvinceId) return 'این برنامه برای استان دیگری است';
@@ -69,7 +105,8 @@ export class EventsService {
     const out: Record<string, unknown> = {
       id: e.id, title: e.title, kind: e.kind, startsAt: e.startsAt, endsAt: e.endsAt, location: e.location, hostName: e.hostName,
       capacity: e.capacity, seatsLeft, waitlist: e.waitlist, requiresApproval: e.requiresApproval, registrationDeadline: e.registrationDeadline,
-      audienceGender: e.audienceGender, status: e.status, cancelReason: e.cancelReason, courseId: e.courseId,
+      audienceGender: e.audienceGender, status: e.status, cancelReason: e.cancelReason, courseId: e.courseId, feeNote: e.feeNote,
+      scoped: e.audienceNetworkId ? 'ORG' : e.audienceMosqueId ? 'MOSQUE' : e.audienceCoreId ? 'CORE' : null,
       registered: c?.registered ?? 0,
       my: mine && mine.status !== 'CANCELLED' && mine.status !== 'REJECTED' ? { status: mine.status, checkInCode: mine.status === 'REGISTERED' ? mine.checkInCode : null, attendedAt: mine.attendedAt, feedback: mine.feedback } : mine ? { status: mine.status } : null,
     };
@@ -231,20 +268,23 @@ export class EventsService {
 
   private clean(u: AuthUser, d: EventInput, creating: boolean) {
     const kind = d.kind;
-    if (creating && !this.canCreate(u, kind)) throw new ForbiddenException({ code: 'forbidden', message: u.roles.includes('INSTRUCTOR') ? 'مدرس فقط برنامهٔ آنلاین خودش را می‌سازد' : 'اجازهٔ ساخت برنامه ندارید' });
-    if (!creating && kind && !HQ(u) && !u.roles.includes('RAHYAR') && kind !== 'ONLINE') throw new ForbiddenException({ code: 'forbidden', message: 'مدرس فقط برنامهٔ آنلاین' });
+    const scoped = !!(d.audienceNetworkId || d.audienceMosqueId || d.audienceCoreId);
+    if (creating && !scoped && u.roles.includes('INSTRUCTOR') && !this.canCreate(u, kind)) throw new ForbiddenException({ code: 'forbidden', message: 'مدرس فقط برنامهٔ آنلاین خودش را می‌سازد' });
+    if (!creating && !scoped && kind && u.roles.includes('INSTRUCTOR') && !HQ(u) && !u.roles.includes('RAHYAR') && kind !== 'ONLINE') throw new ForbiddenException({ code: 'forbidden', message: 'مدرس فقط برنامهٔ آنلاین' });
     const v: EventInput = {};
-    const keys = ['title', 'description', 'agenda', 'kind', 'location', 'mapUrl', 'onlineUrl', 'bring', 'hostName', 'capacity', 'waitlist', 'requiresApproval', 'audienceGender', 'audienceProvinceId', 'audienceCountyId', 'courseId'] as const;
+    const keys = ['title', 'description', 'agenda', 'kind', 'location', 'mapUrl', 'onlineUrl', 'bring', 'hostName', 'capacity', 'waitlist', 'requiresApproval', 'audienceGender', 'audienceProvinceId', 'audienceCountyId', 'courseId', 'audienceNetworkId', 'audienceMosqueId', 'audienceCoreId', 'feeNote'] as const;
     for (const k of keys) if (d[k] !== undefined) (v as any)[k] = d[k] === '' ? null : d[k];
     for (const k of ['startsAt', 'endsAt', 'registrationDeadline'] as const) if (d[k] !== undefined) (v as any)[k] = d[k] ? new Date(d[k] as any) : null;
     if (v.capacity != null && (!Number.isInteger(v.capacity) || v.capacity < 1)) throw new BadRequestException({ code: 'bad_capacity', message: 'ظرفیت باید عدد مثبت باشد' });
     if (v.onlineUrl && !/^https:\/\//.test(v.onlineUrl)) throw new BadRequestException({ code: 'bad_url', message: 'پیوند کلاس باید با https شروع شود' });
     if (v.mapUrl && !/^https:\/\//.test(v.mapUrl)) throw new BadRequestException({ code: 'bad_url', message: 'پیوند نقشه باید با https شروع شود' });
+    if (v.feeNote && v.feeNote.length > 500) throw new BadRequestException({ code: 'too_long', message: 'توضیح هزینه حداکثر ۵۰۰ نویسه است' });
     return v;
   }
 
   async create(u: AuthUser, d: EventInput) {
     const v = this.clean(u, d, true);
+    await this.assertScope(u, v, true);
     if (!v.title || !v.kind || !v.startsAt || !v.endsAt) throw new BadRequestException({ code: 'missing', message: 'عنوان، نوع، زمان شروع و پایان لازم است' });
     if (v.endsAt <= v.startsAt) throw new BadRequestException({ code: 'bad_time', message: 'پایان باید بعد از شروع باشد' });
     const [e] = await this.db.insert(events).values({ ...(v as any), createdById: u.id, status: 'DRAFT' }).returning();
@@ -254,6 +294,7 @@ export class EventsService {
   async update(u: AuthUser, id: string, d: EventInput & { notify?: boolean }) {
     const e = await this.manageable(u, id);
     const v = this.clean(u, d, false);
+    await this.assertScope(u, { ...e, ...v }, false);
     const [n] = await this.db.update(events).set({ ...v, updatedAt: new Date() }).where(eq(events.id, id)).returning();
     if (n.endsAt <= n.startsAt) throw new BadRequestException({ code: 'bad_time', message: 'پایان باید بعد از شروع باشد' });
     const timeChanged = (v.startsAt && v.startsAt.getTime() !== e.startsAt.getTime()) || (v.location !== undefined && v.location !== e.location);

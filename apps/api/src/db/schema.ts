@@ -4,7 +4,7 @@
  */
 import { relations, sql } from 'drizzle-orm';
 import {
-  boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uniqueIndex,
+  bigint, boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { createId } from './id';
 
@@ -140,6 +140,7 @@ export const courses = pgTable('courses', {
   passScore: integer('pass_score').notNull().default(60),
   missionRule: missionRule('mission_rule').notNull().default('ON_SUBMIT'),
   hasCertificate: boolean('has_certificate').notNull().default(true),
+  sponsorId: text('sponsor_id').references((): any => sponsors.id, { onDelete: 'set null' }), // حامی دوره (مدل کسب‌وکار)؛ فقط یک خط «با حمایت …» در صفحهٔ دوره
   outcomes: text('outcomes').array().notNull().default(sql`'{}'::text[]`),
   version: integer('version').notNull().default(1),
   publishedAt: timestamp('published_at', { withTimezone: true }),
@@ -248,6 +249,7 @@ export const certificates = pgTable('certificates', {
   score: integer('score'),
   issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  orgName: text('org_name'), // «برای اعضای …» وقتی بستهٔ سازمان اجازه بدهد
 }, (t) => [uniqueIndex('cert_user_course_uq').on(t.userId, t.courseId), uniqueIndex('cert_user_path_uq').on(t.userId, t.pathId)]);
 
 // ───────────── دسترسی ویژه ─────────────
@@ -401,6 +403,10 @@ export const events = pgTable('events', {
   audienceProvinceId: text('audience_province_id').references(() => provinces.id),
   audienceCountyId: text('audience_county_id').references(() => counties.id),
   courseId: text('course_id').references(() => courses.id), // برنامه‌ای که بخشی از یک دوره است
+  audienceNetworkId: text('audience_network_id').references(() => networks.id), // برنامهٔ ویژهٔ اعضای یک سازمان
+  audienceMosqueId: text('audience_mosque_id').references(() => mosques.id), // برنامهٔ امام برای اعضای مسجدش
+  audienceCoreId: text('audience_core_id').references(() => cores.id), // برنامهٔ مسئول هسته برای اعضای هسته
+  feeNote: text('fee_note'), // هزینهٔ شرکت و نحوهٔ پرداخت (فقط اعلام؛ دریافت بیرون از سامانه)
   status: eventStatus('status').notNull().default('DRAFT'),
   cancelReason: text('cancel_reason'),
   createdById: text('created_by_id').notNull().references(() => users.id),
@@ -495,6 +501,7 @@ export const tickets = pgTable('tickets', {
   category: text('category').notNull(), // LOGIN | COURSE | TECH | OTHER
   subject: text('subject').notNull(),
   status: text('status').notNull().default('OPEN'), // OPEN | ANSWERED | CLOSED
+  priority: boolean('priority').notNull().default(false), // پشتیبانی تعهدی بستهٔ سازمانی ویژه
   assigneeId: text('assignee_id').references(() => users.id),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -588,8 +595,9 @@ export const campaigns = pgTable('campaigns', {
   title: text('title').notNull(),
   summary: text('summary').notNull(),
   body: text('body'),
-  scope: text('scope').notNull(), // NATIONAL | PROVINCE
+  scope: text('scope').notNull(), // NATIONAL | PROVINCE | ORG
   provinceId: text('province_id').references(() => provinces.id),
+  networkId: text('network_id').references(() => networks.id), // برای پویش ویژهٔ اعضای سازمان
   goal: integer('goal'), // هدف جمعی: شمار کارهای انجام‌شده
   startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
   endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
@@ -632,3 +640,79 @@ export const campaignDone = pgTable('campaign_done', {
   note: text('note'),
   doneAt: timestamp('done_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [primaryKey({ columns: [t.taskId, t.userId] }), index('campaign_done_idx').on(t.campaignId)]);
+
+
+// ═══════════════════════ مدل کسب‌وکار (دور چهارم) ═══════════════════════
+// کنشگر هرگز پول نمی‌دهد. سازمان‌ها اشتراک سالانه به ازای هر نفر دارند؛ قرارداد و پرداخت فعلاً بیرون از سامانه
+// و ستاد در پنل ثبت می‌کند. ساختار فاکتور از حالا آماده است تا درگاه بعد از نسخهٔ ۱ اضافه شود.
+
+export const subscriptions = pgTable('subscriptions', {
+  id: id(),
+  networkId: text('network_id').notNull().references(() => networks.id, { onDelete: 'cascade' }),
+  plan: text('plan').notNull(), // ORG_BASIC | ORG_PREMIUM
+  seats: integer('seats').notNull(),
+  startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+  endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
+  contractNo: text('contract_no'),
+  pricePerSeat: bigint('price_per_seat', { mode: 'number' }).notNull(), // تومان
+  discountPct: integer('discount_pct').notNull().default(0),
+  fixedFee: bigint('fixed_fee', { mode: 'number' }).notNull().default(0), // هزینهٔ ثابت سالانهٔ پشتیبانی تعهدی (ویژه)
+  amount: bigint('amount', { mode: 'number' }).notNull(), // مبلغ کل قرارداد، تومان
+  note: text('note'),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  remindedAt: jsonb('reminded_at'), // { d30?, d7?, ended? }
+  createdById: text('created_by_id').notNull().references(() => users.id),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index('subs_network_idx').on(t.networkId, t.endsAt)]);
+
+/** دوره‌های ویژهٔ سازمان که این اشتراک باز می‌کند */
+export const subscriptionCourses = pgTable('subscription_courses', {
+  subscriptionId: text('subscription_id').notNull().references(() => subscriptions.id, { onDelete: 'cascade' }),
+  courseId: text('course_id').notNull().references(() => courses.id, { onDelete: 'cascade' }),
+}, (t) => [primaryKey({ columns: [t.subscriptionId, t.courseId] })]);
+
+export const sponsors = pgTable('sponsors', {
+  id: id(),
+  name: text('name').notNull(), // همانی که در «با حمایت …» می‌آید
+  kind: text('kind').notNull(), // ORG | PERSON
+  termsAccepted: boolean('terms_accepted').notNull().default(false), // سه شرط حامی پذیرفته شده
+  note: text('note'),
+  createdAt: createdAt(),
+});
+
+/** خدمات سفارشی: دورهٔ اختصاصی، کارگاه حضوری، راه‌اندازی شبکهٔ راهیاری، جلسهٔ راه‌اندازی */
+export const serviceOrders = pgTable('service_orders', {
+  id: id(),
+  networkId: text('network_id').references(() => networks.id, { onDelete: 'set null' }),
+  sponsorId: text('sponsor_id').references(() => sponsors.id, { onDelete: 'set null' }),
+  kind: text('kind').notNull(), // COURSE | WORKSHOP | RAHYAR_NETWORK | ONBOARDING | OTHER
+  title: text('title').notNull(),
+  costs: jsonb('costs').notNull(), // برگهٔ بودجهٔ یکسان: [{ item, amount }]
+  cost: bigint('cost', { mode: 'number' }).notNull(),
+  price: bigint('price', { mode: 'number' }).notNull(), // پیش‌فرض: هزینه + ۵۰٪
+  status: text('status').notNull().default('PROPOSED'), // PROPOSED | ACTIVE | DONE | CANCELLED
+  courseId: text('course_id').references(() => courses.id, { onDelete: 'set null' }),
+  note: text('note'),
+  createdById: text('created_by_id').notNull().references(() => users.id),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/** فاکتور؛ امروز ستاد پرداخت را دستی ثبت می‌کند، بعد از نسخهٔ ۱ درگاه همین را می‌پردازد */
+export const invoices = pgTable('invoices', {
+  id: id(),
+  number: text('number').notNull().unique(),
+  networkId: text('network_id').references(() => networks.id, { onDelete: 'set null' }),
+  subscriptionId: text('subscription_id').references(() => subscriptions.id, { onDelete: 'set null' }),
+  serviceOrderId: text('service_order_id').references(() => serviceOrders.id, { onDelete: 'set null' }),
+  sponsorId: text('sponsor_id').references(() => sponsors.id, { onDelete: 'set null' }),
+  title: text('title').notNull(),
+  amount: bigint('amount', { mode: 'number' }).notNull(),
+  status: text('status').notNull().default('ISSUED'), // ISSUED | PAID | VOID
+  paidAt: timestamp('paid_at', { withTimezone: true }),
+  paymentRef: text('payment_ref'), // شمارهٔ پیگیری بانکی یا درگاه
+  method: text('method'), // TRANSFER | GATEWAY
+  createdById: text('created_by_id').notNull().references(() => users.id),
+  createdAt: createdAt(),
+}, (t) => [index('invoices_network_idx').on(t.networkId)]);

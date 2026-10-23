@@ -7,10 +7,11 @@ import { pgArr } from '../db/id';
 import { broadcasts, coreMemberships, cores, counties, enrollments, mosques, networkMembers, networks, roleGrants, users } from '../db/schema';
 import { Notifier } from '../notifications/notifications';
 import { RahyarService } from '../rahyar/rahyar.service';
+import { Business } from '../business/business';
 
-export type AudienceKind = 'ALL' | 'PROVINCE' | 'COUNTY' | 'NETWORK' | 'ROLE' | 'COURSE' | 'SCOPE' | 'MOSQUE' | 'CORE';
+export type AudienceKind = 'ALL' | 'PROVINCE' | 'COUNTY' | 'NETWORK' | 'ROLE' | 'COURSE' | 'SCOPE' | 'MOSQUE' | 'CORE' | 'ORG';
 class AudienceDto {
-  @IsIn(['ALL', 'PROVINCE', 'COUNTY', 'NETWORK', 'ROLE', 'COURSE', 'SCOPE', 'MOSQUE', 'CORE']) kind: AudienceKind;
+  @IsIn(['ALL', 'PROVINCE', 'COUNTY', 'NETWORK', 'ROLE', 'COURSE', 'SCOPE', 'MOSQUE', 'CORE', 'ORG']) kind: AudienceKind;
   @IsOptional() @IsArray() @IsString({ each: true }) ids?: string[];
 }
 class SendDto extends AudienceDto {
@@ -25,7 +26,7 @@ const ROLE_FA: Record<string, string> = { RAHYAR: 'راهیاران', IMAM: 'ا�
 /** پیام گروهی (۶.۴): هر نقش فقط به دامنهٔ خودش؛ بیش از ۱۰۰۰ گیرنده با تأیید مدیر ستاد */
 @Injectable()
 export class Broadcasts {
-  constructor(@InjectDb() private readonly db: Db, private readonly rahyar: RahyarService, private readonly notify: Notifier) {}
+  constructor(@InjectDb() private readonly db: Db, private readonly rahyar: RahyarService, private readonly notify: Notifier, private readonly business: Business) {}
 
   /** گیرندگان و برچسب مخاطب؛ اجازهٔ فرستنده همین‌جا بررسی می‌شود */
   async resolve(u: AuthUser, a: { kind: AudienceKind; ids?: string[] }): Promise<{ ids: string[]; label: string }> {
@@ -86,6 +87,12 @@ export class Broadcasts {
         const free = await pick(eq(users.mosqueId, m!.id));
         return { ids: [...new Set([...free, ...inCores.map((x) => x.id)])].filter((x) => x !== u.id), label: `اعضای ${m!.name}` };
       }
+      case 'ORG': {
+        // مدیر سازمان با بسته‌ای که «پیام گروهی به اعضا» دارد
+        need(ids.length === 1);
+        const g = await this.business.orgGate(u, ids[0], 'broadcast');
+        return { ids: (await this.business.memberIds(ids[0])).filter((x) => x !== u.id), label: `اعضای ${g.net.name}` };
+      }
       case 'CORE': {
         need(ids.length === 1);
         const c = await this.db.query.cores.findFirst({ where: eq(cores.id, ids[0]) });
@@ -105,6 +112,11 @@ export class Broadcasts {
     if ((await this.rahyar.learnersInScope(u.id)).length) out.push({ kind: 'SCOPE', label: 'کنشگران دامنهٔ راهیاری من' });
     for (const m of await this.db.select().from(mosques).where(eq(mosques.imamId, u.id))) out.push({ kind: 'MOSQUE', ids: [m.id], label: `اعضای ${m.name}` });
     for (const c of await this.db.select().from(cores).where(eq(cores.leaderId, u.id))) out.push({ kind: 'CORE', ids: [c.id], label: `هستهٔ «${c.name}»` });
+    for (const g of await this.db.select({ id: roleGrants.networkId }).from(roleGrants).where(and(eq(roleGrants.userId, u.id), eq(roleGrants.role, 'ORG_ADMIN')))) {
+      if (!g.id) continue;
+      const ok = await this.business.orgGate(u, g.id, 'broadcast').catch(() => null);
+      if (ok) out.push({ kind: 'ORG', ids: [g.id], label: `اعضای ${ok.net.name}` });
+    }
     return { hq, options: out, approvalOver: APPROVAL_OVER, roles: Object.entries(ROLE_FA).map(([id, label]) => ({ id, label })) };
   }
 

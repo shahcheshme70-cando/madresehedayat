@@ -48,6 +48,24 @@ export class Messenger {
     this.drain();
   }
 
+  /**
+   * فرستادن فوری یک پیام به خود کاربر (کد ورود). اول بله، بعد ایتا. بی‌توجه به خاموش بودن اعلان‌ها،
+   * چون کاربر خودش کد خواسته. اگر نشد null برمی‌گرداند تا پیامک برود.
+   */
+  async sendDirect(userId: string, text: string): Promise<'BALE' | 'EITAA' | null> {
+    const links = await this.db.select().from(messengerLinks).where(eq(messengerLinks.userId, userId));
+    for (const p of ['BALE', 'EITAA'] as const) {
+      const l = links.find((x) => x.provider === p);
+      if (!l || (p === 'BALE' && !this.baleEnabled) || (p === 'EITAA' && !eitaaEnabled())) continue;
+      try {
+        if (p === 'BALE') await this.bale('sendMessage', { chat_id: l.chatId, text });
+        else await eitaaSend(l.chatId, eitaaEscape(text));
+        return p;
+      } catch (e: any) { this.log.warn(`کد ورود با ${p === 'BALE' ? 'بله' : 'ایتا'} نرفت: ${e?.message}`); }
+    }
+    return null;
+  }
+
   /** حدود ۲۰ پیام در ثانیه تا محدودیت بله رعایت شود */
   private async drain() {
     if (this.draining) return;

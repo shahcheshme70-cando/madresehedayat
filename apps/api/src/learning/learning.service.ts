@@ -2,9 +2,10 @@ import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Inj
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { randomInt } from 'node:crypto';
 import { Db, InjectDb } from '../db/db.module';
+import { Business } from '../business/business';
 import { decJson, encJson } from '../common/crypto';
 import {
-  accessGrants, certificates, coreMemberships, cores, courseDependencies, courses, enrollments, lessonProgress,
+  accessGrants, certificates, sponsors, coreMemberships, cores, courseDependencies, courses, enrollments, lessonProgress,
   lessons, modules, networkMembers, pathAttempts, paths, pathItems, quizAttempts, roleGrants, users,
 } from '../db/schema';
 import { gradeQuiz, publicContent, QuizContent } from './lesson-content';
@@ -17,7 +18,7 @@ type CourseRow = typeof courses.$inferSelect;
 
 @Injectable()
 export class LearningService {
-  constructor(@InjectDb() private readonly db: Db) {}
+  constructor(@InjectDb() private readonly db: Db, private readonly business: Business) {}
 
   // ───────── دسترسی ─────────
 
@@ -39,7 +40,8 @@ export class LearningService {
       or(eq(accessGrants.userId, userId), nets.length ? inArray(accessGrants.networkId, nets) : sql`false`),
       or(isNull(accessGrants.expiresAt), gt(accessGrants.expiresAt, now)),
     ));
-    return new Set(rows.map((r) => r.courseId));
+    // دوره‌های ویژه‌ای که اشتراک فعال سازمان‌های کاربر باز کرده (مدل کسب‌وکار)
+    return new Set([...rows.map((r) => r.courseId), ...(await this.business.subscribedCourseIds(userId))]);
   }
 
   canSee(c: CourseRow, granted: Set<string>) {
@@ -124,7 +126,11 @@ export class LearningService {
     const c = await this.courseBySlugOrId(key);
     const granted = await this.grantedCourseIds(userId);
     if (!this.canSee(c, granted)) {
-      if (c.status === 'PUBLISHED' && c.isRestricted) throw new ForbiddenException({ code: 'restricted', message: 'این دوره فقط برای مشترکان است' });
+      if (c.status === 'PUBLISHED' && c.isRestricted) {
+        const enr = userId ? await this.db.query.enrollments.findFirst({ where: and(eq(enrollments.userId, userId), eq(enrollments.courseId, c.id)) }) : undefined;
+        if (enr) throw new ForbiddenException({ code: 'subscription_ended', message: 'دسترسی سازمان شما به این دوره تمام شده است. پیشرفت و گواهی‌تان محفوظ است و با تمدید اشتراک برمی‌گردد' });
+        throw new ForbiddenException({ code: 'restricted', message: 'این دوره ویژهٔ اعضای سازمان‌های مشترک است' });
+      }
       throw new NotFoundException({ code: 'no_course', message: 'این دوره پیدا نشد' });
     }
     const mods = await this.db.query.modules.findMany({
@@ -143,6 +149,7 @@ export class LearningService {
     const doneSet = new Set(prog.filter((p) => p.completedAt).map((p) => p.lessonId));
     return {
       ...this.courseCard(c), about: c.about, outcomes: c.outcomes, passScore: c.passScore, missionRule: c.missionRule,
+      sponsor: c.sponsorId ? (await this.db.query.sponsors.findFirst({ where: eq(sponsors.id, c.sponsorId), columns: { name: true } }))?.name ?? null : null,
       dependencies: deps,
       locked: deps.some((d) => d.kind === 'PREREQUISITE' && !d.done),
       modules: mods.map((m) => ({ id: m.id, title: m.title, lessons: m.lessons.map((l) => ({
@@ -303,7 +310,7 @@ export class LearningService {
     for (let i = 0; i < 5; i++) {
       const code = 'HD-' + this.rand(4) + '-' + this.rand(4);
       try {
-        await this.db.insert(certificates).values({ code, userId, courseId: c.id, holderName: `${u.firstName} ${u.lastName}`, courseTitle: c.title, score: final });
+        await this.db.insert(certificates).values({ code, userId, courseId: c.id, holderName: `${u.firstName} ${u.lastName}`, courseTitle: c.title, score: final, orgName: await this.business.certOrgName(userId, c.id) });
         return { code };
       } catch (e: any) { if (e?.code !== '23505') throw e; }
     }
@@ -356,7 +363,7 @@ export class LearningService {
         const u = (await this.db.query.users.findFirst({ where: eq(users.id, userId) }))!;
         for (let i = 0; i < 5 && !certificate; i++) {
           const code = 'HD-' + this.rand(4) + '-' + this.rand(4);
-          try { await this.db.insert(certificates).values({ code, userId, pathId: p.id, holderName: `${u.firstName} ${u.lastName}`, courseTitle: `مسیر «${p.title}»`, score }); certificate = { code }; }
+          try { await this.db.insert(certificates).values({ code, userId, pathId: p.id, holderName: `${u.firstName} ${u.lastName}`, courseTitle: `مسیر «${p.title}»`, score, orgName: await this.business.certOrgName(userId, null) }); certificate = { code }; }
           catch (e: any) { if (e?.code !== '23505') throw e; }
         }
       }
@@ -376,7 +383,7 @@ export class LearningService {
   }
 
   async myCertificates(userId: string) {
-    return this.db.select({ code: certificates.code, courseTitle: certificates.courseTitle, issuedAt: certificates.issuedAt, score: certificates.score, courseSlug: courses.slug, pathSlug: paths.slug })
+    return this.db.select({ code: certificates.code, courseTitle: certificates.courseTitle, issuedAt: certificates.issuedAt, score: certificates.score, orgName: certificates.orgName, courseSlug: courses.slug, pathSlug: paths.slug })
       .from(certificates).leftJoin(courses, eq(courses.id, certificates.courseId)).leftJoin(paths, eq(paths.id, certificates.pathId))
       .where(and(eq(certificates.userId, userId), isNull(certificates.revokedAt))).orderBy(desc(certificates.issuedAt));
   }
@@ -385,6 +392,6 @@ export class LearningService {
   async verify(code: string) {
     const c = await this.db.query.certificates.findFirst({ where: eq(certificates.code, code.trim().toUpperCase()) });
     if (!c) return { valid: false as const };
-    return { valid: !c.revokedAt, revoked: !!c.revokedAt, holderName: c.holderName, courseTitle: c.courseTitle, issuedAt: c.issuedAt, score: c.score, code: c.code };
+    return { valid: !c.revokedAt, revoked: !!c.revokedAt, holderName: c.holderName, courseTitle: c.courseTitle, issuedAt: c.issuedAt, score: c.score, code: c.code, orgName: c.orgName };
   }
 }

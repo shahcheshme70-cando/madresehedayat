@@ -22,5 +22,11 @@ export const config = {
   /** شماره‌هایی که هنگام راه‌اندازی نقش مدیر ستاد می‌گیرند (با ویرگول جدا) */
   bootstrapAdmins: (process.env.BOOTSTRAP_ADMIN_MOBILES ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   publicUrl: env('PUBLIC_URL', 'http://localhost:8080'),
+  /** کلید ۳۲ بایتی (base64) رمزگذاری دادهٔ قرمز در پایگاه داده. گم شدنش یعنی از دست رفتن داده‌ها؛ جدا پشتیبان بگیرید */
+  dataKey: env('DATA_KEY', 'ZGV2LW9ubHktZGF0YS1rZXktY2hhbmdlLW1lLTMyYiE='),
+  /** رمز دوم کارکنان ستاد؛ فقط برای توسعه خاموش شود */
+  staffMfa: env('STAFF_MFA', 'on') !== 'off',
+  baleToken: process.env.BALE_BOT_TOKEN ?? '',
+  baleBotUsername: process.env.BALE_BOT_USERNAME ?? '',
   get isDev() { return this.nodeEnv !== 'production'; },
 };

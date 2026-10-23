@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
+import { dec, enc, mobileKey } from '../common/crypto';
 import { Db, InjectDb } from '../db/db.module';
 import { coreMemberships, cores, mosques, otpRequests, roleGrants, sessions, users } from '../db/schema';
 import { RoleName } from '../common/auth.decorators';
@@ -36,7 +37,7 @@ export class AuthService {
   async requestOtp(mobile: string) {
     const hourAgo = new Date(Date.now() - 3600_000);
     const recent = await this.db.select().from(otpRequests)
-      .where(and(eq(otpRequests.mobile, mobile), gt(otpRequests.createdAt, hourAgo)))
+      .where(and(eq(otpRequests.mobile, mobileKey(mobile)), gt(otpRequests.createdAt, hourAgo)))
       .orderBy(desc(otpRequests.createdAt));
     if (recent[0] && Date.now() - recent[0].createdAt.getTime() < RESEND_MS) {
       const wait = Math.ceil((RESEND_MS - (Date.now() - recent[0].createdAt.getTime())) / 1000);
@@ -46,15 +47,15 @@ export class AuthService {
       throw new HttpException({ code: 'otp_limit', message: 'تعداد درخواست کد زیاد شد؛ یک ساعت دیگر امتحان کنید' }, HttpStatus.TOO_MANY_REQUESTS);
     }
     const code = String(randomInt(10000, 100000));
-    await this.db.insert(otpRequests).values({ mobile, codeHash: this.otpHash(mobile, code), expiresAt: new Date(Date.now() + OTP_TTL_MS) });
+    await this.db.insert(otpRequests).values({ mobile: mobileKey(mobile), codeHash: this.otpHash(mobile, code), expiresAt: new Date(Date.now() + OTP_TTL_MS) });
     await this.sms.sendOtp(mobile, code);
-    const exists = !!(await this.db.query.users.findFirst({ where: eq(users.mobile, mobile), columns: { id: true } }));
+    const exists = !!(await this.db.query.users.findFirst({ where: eq(users.mobile, mobileKey(mobile)), columns: { id: true } }));
     return { sent: true, resendIn: RESEND_MS / 1000, isNew: !exists, ...(config.isDev && config.smsProvider === 'console' ? { devCode: code } : {}) };
   }
 
   async verifyOtp(mobile: string, code: string) {
     const [otp] = await this.db.select().from(otpRequests)
-      .where(and(eq(otpRequests.mobile, mobile), isNull(otpRequests.usedAt), gt(otpRequests.expiresAt, new Date())))
+      .where(and(eq(otpRequests.mobile, mobileKey(mobile)), isNull(otpRequests.usedAt), gt(otpRequests.expiresAt, new Date())))
       .orderBy(desc(otpRequests.createdAt)).limit(1);
     if (!otp) throw new BadRequestException({ code: 'otp_expired', message: 'کد منقضی شده؛ کد تازه بگیرید' });
     if (otp.attempts >= MAX_WRONG) throw new BadRequestException({ code: 'otp_locked', message: 'چند بار اشتباه وارد شد؛ کد تازه بگیرید' });
@@ -64,7 +65,7 @@ export class AuthService {
       throw new BadRequestException({ code: 'otp_wrong', message: 'کد درست نیست', left: MAX_WRONG - otp.attempts - 1 });
     }
     await this.db.update(otpRequests).set({ usedAt: new Date() }).where(eq(otpRequests.id, otp.id));
-    const user = await this.db.query.users.findFirst({ where: eq(users.mobile, mobile) });
+    const user = await this.db.query.users.findFirst({ where: eq(users.mobile, mobileKey(mobile)) });
     if (!user) {
       const regToken = this.jwt.sign({ mobile, purpose: 'register' }, { expiresIn: '20m' });
       return { needsRegistration: true as const, regToken };
@@ -82,10 +83,10 @@ export class AuthService {
     } catch {
       throw new BadRequestException({ code: 'reg_expired', message: 'زمان ثبت‌نام تمام شد؛ دوباره شماره را وارد کنید' });
     }
-    const existing = await this.db.query.users.findFirst({ where: eq(users.mobile, mobile) });
+    const existing = await this.db.query.users.findFirst({ where: eq(users.mobile, mobileKey(mobile)) });
     if (existing) return existing.id;
     const [u] = await this.db.insert(users).values({
-      mobile,
+      mobile: mobileKey(mobile), mobileEnc: enc(mobile),
       firstName: input.firstName.trim(),
       lastName: input.lastName.trim(),
       gender: input.gender,
@@ -106,22 +107,24 @@ export class AuthService {
   }
 
   async rolesOf(userId: string): Promise<RoleName[]> {
-    const u = await this.db.query.users.findFirst({ where: eq(users.id, userId), columns: { mobile: true } });
-    if (u && config.bootstrapAdmins.includes(u.mobile)) {
+    const u = await this.db.query.users.findFirst({ where: eq(users.id, userId), columns: { mobileEnc: true } });
+    if (u && config.bootstrapAdmins.includes(dec(u.mobileEnc) ?? '')) {
       await this.db.insert(roleGrants).values({ userId, role: 'HQ_ADMIN' }).onConflictDoNothing();
     }
     const rows = await this.db.select({ role: roleGrants.role }).from(roleGrants).where(eq(roleGrants.userId, userId));
     return [...new Set(rows.map((r) => r.role as RoleName))];
   }
 
-  async issueTokens(userId: string, userAgent?: string) {
+  async issueTokens(userId: string, userAgent?: string, mfaAt: Date | null = null) {
     const roles = await this.rolesOf(userId);
     const refresh = randomBytes(32).toString('base64url');
     await this.db.insert(sessions).values({
       userId, tokenHash: sha(refresh), userAgent: userAgent?.slice(0, 200),
-      expiresAt: new Date(Date.now() + config.refreshTtlDays * 86400_000),
+      expiresAt: new Date(Date.now() + config.refreshTtlDays * 86400_000), mfaAt,
     });
-    const access = this.jwt.sign({ sub: userId, roles }, { expiresIn: config.accessTtlSec });
+    // رمز دوم هر ۱۲ ساعت دوباره پرسیده می‌شود
+    const mfa = !!mfaAt && Date.now() - mfaAt.getTime() < 12 * 3600_000;
+    const access = this.jwt.sign({ sub: userId, roles, mfa }, { expiresIn: config.accessTtlSec });
     return { access, refresh };
   }
 
@@ -131,7 +134,15 @@ export class AuthService {
     const u = await this.db.query.users.findFirst({ where: eq(users.id, s.userId), columns: { isActive: true } });
     if (!u?.isActive) throw new UnauthorizedException({ code: 'inactive', message: 'این حساب غیرفعال است' });
     await this.db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.id, s.id));
-    return this.issueTokens(s.userId, userAgent);
+    return this.issueTokens(s.userId, userAgent, s.mfaAt);
+  }
+
+  /** رمز دوم تأیید شد: نشست فعلی را با نشانهٔ تأیید دوباره صادر می‌کند */
+  async upgradeMfa(refreshToken: string, userAgent?: string) {
+    const s = await this.db.query.sessions.findFirst({ where: eq(sessions.tokenHash, sha(refreshToken)) });
+    if (!s || s.revokedAt || s.expiresAt < new Date()) throw new UnauthorizedException({ code: 'session_ended', message: 'دوباره وارد شوید' });
+    await this.db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.id, s.id));
+    return this.issueTokens(s.userId, userAgent, new Date());
   }
 
   async logout(refreshToken?: string) {

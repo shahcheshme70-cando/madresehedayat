@@ -24,6 +24,10 @@ import { CheckIn, EventEditor, ManageEvent, ManageEventList } from './pages/Mana
 import { RahyarAssign, RahyarConversation, RahyarHome, RahyarLearner, RahyarLearners, RahyarMessages, RahyarReport, RahyarReports } from './pages/Rahyar';
 import { CorePage, ImamPage, JoinPage, Messages, MyCores, Notifications, OrgList, OrgPage } from './pages/Social';
 import RahyarTree from './pages/admin/RahyarTree';
+import { AdminSupport, Help, TicketPage } from './pages/Support';
+import { AdminBroadcasts, BroadcastPage } from './pages/Broadcast';
+import { AccessLogPage, Samples } from './pages/admin/Extra';
+import { PathExam } from './pages/Learn';
 import './styles/app.css';
 import { DemoBar } from './demo/DemoBar';
 
@@ -59,6 +63,10 @@ const router = (import.meta.env.VITE_DEMO ? createHashRouter : createBrowserRout
       { path: '/', element: <Home /> },
       { path: '/learn', element: <Learn /> },
       { path: '/paths/:slug', element: <PathPage /> },
+      { path: '/paths/:slug/exam', element: <PathExam /> },
+      { path: '/help', element: <Help /> },
+      { path: '/support/:id', element: <TicketPage /> },
+      { path: '/broadcast', element: <BroadcastPage /> },
       { path: '/courses/:slug', element: <Course /> },
       { path: '/lessons/:id', element: <Lesson /> },
       { path: '/me', element: <Me /> },
@@ -105,6 +113,11 @@ const router = (import.meta.env.VITE_DEMO ? createHashRouter : createBrowserRout
       { path: 'mosques', element: <Mosques /> },
       { path: 'audit', element: <Audit /> },
       { path: 'rahyar', element: <RahyarTree /> },
+      { path: 'support', element: <AdminSupport /> },
+      { path: 'support/:id', element: <TicketPage admin /> },
+      { path: 'broadcasts', element: <AdminBroadcasts /> },
+      { path: 'samples', element: <Samples /> },
+      { path: 'security', element: <AccessLogPage /> },
       { path: 'events', element: <ManageEventList /> },
       { path: 'events/new', element: <EventEditor /> },
       { path: 'events/:id', element: <ManageEvent /> },

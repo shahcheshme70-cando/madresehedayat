@@ -3,6 +3,8 @@ import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsObject, IsOptional, IsString,
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { AuthUser, CurrentUser, Roles } from '../common/auth.decorators';
 import { Db, InjectDb } from '../db/db.module';
+import { AccessLog } from '../security/security';
+import { dec, enc } from '../common/crypto';
 import { pgArr } from '../db/id';
 import { counties, directMessages, mosques, registrations, users } from '../db/schema';
 import { LearningService } from '../learning/learning.service';
@@ -10,7 +12,7 @@ import { Notifier } from '../notifications/notifications';
 import { MissionsService } from './missions.service';
 import { LAYER_FA, RahyarService } from './rahyar.service';
 
-class ReplyDto { @IsIn(['FEEDBACK', 'REVISE', 'APPROVE', 'REPLY']) kind: 'FEEDBACK' | 'REVISE' | 'APPROVE' | 'REPLY'; @IsOptional() @IsString() @MaxLength(4000) body?: string; }
+class ReplyDto { @IsIn(['FEEDBACK', 'REVISE', 'APPROVE', 'REPLY']) kind: 'FEEDBACK' | 'REVISE' | 'APPROVE' | 'REPLY'; @IsOptional() @IsString() @MaxLength(4000) body?: string; @IsOptional() @IsBoolean() proposeSample?: boolean; }
 class SubmitDto {
   @IsString() @Length(10, 4000) did: string;
   @IsOptional() @IsString() @MaxLength(4000) learned?: string;
@@ -29,6 +31,8 @@ class PositionDto {
 class UpdatePositionDto { @IsOptional() @IsString() @MaxLength(80) title?: string; @IsOptional() @IsString() holderMobile?: string | null; @IsOptional() @IsString() parentId?: string; }
 class ProvincesDto { @IsArray() @IsString({ each: true }) provinceIds: string[]; }
 class AssignDto { @IsArray() @IsString({ each: true }) userIds: string[]; @IsString() positionId: string; }
+class SampleDto { @IsIn(['named', 'anon', 'no']) decision: 'named' | 'anon' | 'no'; }
+class SampleReviewDto { @IsBoolean() publish: boolean; @IsOptional() @IsString() @MaxLength(6000) text?: string; }
 class MsgDto { @IsString() @Length(1, 2000) body: string; }
 class PrefDto { @IsBoolean() allowRahyarMessages: boolean; }
 
@@ -36,7 +40,7 @@ class PrefDto { @IsBoolean() allowRahyarMessages: boolean; }
 export class RahyarController {
   constructor(
     @InjectDb() private readonly db: Db, private readonly rahyar: RahyarService, private readonly missions: MissionsService,
-    private readonly learning: LearningService, private readonly notify: Notifier,
+    private readonly learning: LearningService, private readonly notify: Notifier, private readonly access: AccessLog,
   ) {}
 
   // ───────── کنشگر ─────────
@@ -72,6 +76,19 @@ export class RahyarController {
     return this.missions.reply(u, u.id, lessonId, 'REPLY', d.body, async () => {});
   }
 
+  @Post('missions/:lessonId/sample') @HttpCode(200)
+  consentSample(@CurrentUser() u: AuthUser, @Param('lessonId') lessonId: string, @Body() d: SampleDto) { return this.missions.consentSample(u.id, lessonId, d.decision); }
+
+  @Get('lessons/:lessonId/samples')
+  samples(@Param('lessonId') lessonId: string) { return this.missions.publishedSamples(lessonId); }
+
+  /** ستاد فقط گزارش‌هایی را می‌بیند که کنشگر اجازهٔ انتشارشان را داده (۲.۳) */
+  @Get('admin/samples') @Roles('HQ_ADMIN', 'HQ_OPERATOR')
+  allSamples(@Query('status') status?: string) { return this.missions.listSamples(status); }
+
+  @Post('admin/samples/:learnerId/:lessonId') @Roles('HQ_ADMIN', 'HQ_OPERATOR') @HttpCode(200)
+  reviewSample(@Param('learnerId') l: string, @Param('lessonId') ls: string, @Body() d: SampleReviewDto) { return this.missions.reviewSample(l, ls, d.publish, d.text); }
+
   @Get('messages')
   async myMessages(@CurrentUser() u: AuthUser) {
     await this.db.update(directMessages).set({ readByLearnerAt: new Date() }).where(and(eq(directMessages.learnerId, u.id), isNull(directMessages.readByLearnerAt)));
@@ -82,14 +99,15 @@ export class RahyarController {
   async sendMine(@CurrentUser() u: AuthUser, @Body() d: MsgDto) {
     const { responsible } = await this.rahyar.responsibleFor(u.id);
     if (!responsible?.holderId) throw new BadRequestException({ code: 'no_rahyar', message: 'هنوز راهیاری برایتان تعیین نشده' });
-    await this.db.insert(directMessages).values({ learnerId: u.id, authorId: u.id, body: d.body.trim(), readByLearnerAt: new Date() });
+    await this.db.insert(directMessages).values({ learnerId: u.id, authorId: u.id, body: enc(d.body.trim())!, readByLearnerAt: new Date() });
     await this.notify.send(responsible.holderId, { kind: 'dm', title: 'پیام تازه از یک کنشگر', link: `/rahyar/messages/${u.id}` });
     return { ok: true };
   }
 
-  private dmList(learnerId: string) {
-    return this.db.select({ id: directMessages.id, body: directMessages.body, createdAt: directMessages.createdAt, authorId: directMessages.authorId, firstName: users.firstName, lastName: users.lastName })
+  private async dmList(learnerId: string) {
+    const rows = await this.db.select({ id: directMessages.id, body: directMessages.body, createdAt: directMessages.createdAt, authorId: directMessages.authorId, firstName: users.firstName, lastName: users.lastName })
       .from(directMessages).innerJoin(users, eq(users.id, directMessages.authorId)).where(eq(directMessages.learnerId, learnerId)).orderBy(asc(directMessages.createdAt)).limit(300);
+    return rows.map((m) => ({ ...m, body: dec(m.body) ?? '' }));
   }
 
   // ───────── راهیار ─────────
@@ -138,6 +156,7 @@ export class RahyarController {
   @Get('rahyar/learners/:id')
   async learner(@CurrentUser() u: AuthUser, @Param('id') id: string) {
     if (!(await this.rahyar.canSeeLearner(u.id, id, u.roles))) throw new ForbiddenException({ code: 'forbidden', message: 'این کنشگر در دامنهٔ شما نیست' });
+    this.access.write(u.id, 'rahyar.learner', id);
     const p = await this.db.query.users.findFirst({ where: eq(users.id, id), columns: { id: true, firstName: true, lastName: true, countyId: true, mosqueId: true, nearMosque: true, createdAt: true, allowRahyarMessages: true } });
     const courses = await this.learning.myCourses(id);
     const missions = (await this.missions.queue(u.id, 'all')).filter((m) => m.learnerId === id);
@@ -152,12 +171,14 @@ export class RahyarController {
   }
 
   @Get('rahyar/reports/:learnerId/:lessonId')
-  thread(@CurrentUser() u: AuthUser, @Param('learnerId') l: string, @Param('lessonId') ls: string) { return this.missions.thread(u, l, ls); }
+  async thread(@CurrentUser() u: AuthUser, @Param('learnerId') l: string, @Param('lessonId') ls: string) { const t = await this.missions.thread(u, l, ls); if (u.id !== l) this.access.write(u.id, 'rahyar.report', l); return t; }
 
   @Post('rahyar/reports/:learnerId/:lessonId') @HttpCode(200)
-  reply(@CurrentUser() u: AuthUser, @Param('learnerId') l: string, @Param('lessonId') ls: string, @Body() d: ReplyDto) {
+  async reply(@CurrentUser() u: AuthUser, @Param('learnerId') l: string, @Param('lessonId') ls: string, @Body() d: ReplyDto) {
     if (d.kind === 'REPLY') throw new BadRequestException({ code: 'bad_kind', message: 'نوع پاسخ درست نیست' });
-    return this.missions.reply(u, l, ls, d.kind, d.body ?? '', (courseId) => this.learning.checkCompletion(l, courseId));
+    const r = await this.missions.reply(u, l, ls, d.kind, d.body ?? '', (courseId) => this.learning.checkCompletion(l, courseId));
+    if (d.kind === 'APPROVE' && d.proposeSample) await this.missions.proposeSample(u.id, l, ls);
+    return r;
   }
 
   @Get('rahyar/messages')
@@ -170,13 +191,14 @@ export class RahyarController {
       select distinct on (learner_id) learner_id, body, created_at,
         (select count(*)::int from direct_messages d2 where d2.learner_id = d.learner_id and d2.read_by_rahyar_at is null and d2.author_id = d2.learner_id) as unread
       from direct_messages d where learner_id = any(${pgArr(ids)}::text[]) order by learner_id, created_at desc`);
-    return last.rows.map((r) => { const s = scope.find((x) => x.id === r.learner_id)!; return { learnerId: r.learner_id, name: `${s.firstName} ${s.lastName}`, last: r.body, at: r.created_at, unread: r.unread }; })
+    return last.rows.map((r) => { const s = scope.find((x) => x.id === r.learner_id)!; return { learnerId: r.learner_id, name: `${s.firstName} ${s.lastName}`, last: dec(r.body) ?? '', at: r.created_at, unread: r.unread }; })
       .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   }
 
   @Get('rahyar/messages/:learnerId')
   async conversation(@CurrentUser() u: AuthUser, @Param('learnerId') lid: string) {
     if (!(await this.rahyar.canSeeLearner(u.id, lid, u.roles))) throw new ForbiddenException({ code: 'forbidden', message: 'این کنشگر در دامنهٔ شما نیست' });
+    this.access.write(u.id, 'rahyar.messages', lid);
     await this.db.update(directMessages).set({ readByRahyarAt: new Date() }).where(and(eq(directMessages.learnerId, lid), isNull(directMessages.readByRahyarAt)));
     const l = await this.db.query.users.findFirst({ where: eq(users.id, lid), columns: { firstName: true, lastName: true, allowRahyarMessages: true } });
     return { learner: { id: lid, name: `${l?.firstName} ${l?.lastName}`, allowMessages: l?.allowRahyarMessages }, messages: await this.dmList(lid) };
@@ -187,7 +209,7 @@ export class RahyarController {
     if (!(await this.rahyar.canSeeLearner(u.id, lid, u.roles))) throw new ForbiddenException({ code: 'forbidden', message: 'این کنشگر در دامنهٔ شما نیست' });
     const l = await this.db.query.users.findFirst({ where: eq(users.id, lid), columns: { allowRahyarMessages: true } });
     if (!l?.allowRahyarMessages) throw new ForbiddenException({ code: 'dm_off', message: 'این کنشگر پیام مستقیم راهیار را خاموش کرده است' });
-    await this.db.insert(directMessages).values({ learnerId: lid, authorId: u.id, body: d.body.trim(), readByRahyarAt: new Date() });
+    await this.db.insert(directMessages).values({ learnerId: lid, authorId: u.id, body: enc(d.body.trim())!, readByRahyarAt: new Date() });
     await this.notify.send(lid, { kind: 'dm', title: 'پیام تازه از راهیارتان', link: '/messages' });
     return { ok: true };
   }

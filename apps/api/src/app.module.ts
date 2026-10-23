@@ -22,6 +22,10 @@ import { Notifier, NotificationsController } from './notifications/notifications
 import { MissionsService } from './rahyar/missions.service';
 import { RahyarController } from './rahyar/rahyar.controller';
 import { RahyarService } from './rahyar/rahyar.service';
+import { Broadcasts, BroadcastsController } from './broadcasts/broadcasts';
+import { Messenger, MessengerController } from './messenger/messenger';
+import { AccessLog, SecurityController } from './security/security';
+import { SupportController } from './support/support';
 import { ConsoleSms, KavenegarSms, SmsSender } from './sms/sms';
 
 @Controller('health')
@@ -41,10 +45,11 @@ class HealthController {
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
   ],
   controllers: [HealthController, AuthController, GeoController, LearningController, AdminController, FilesController,
-    NotificationsController, RahyarController, CoresController, EventsController],
+    NotificationsController, RahyarController, CoresController, EventsController,
+    MessengerController, SecurityController, BroadcastsController, SupportController],
   providers: [
     AuthService, LearningService, AdminService, FileStore,
-    Notifier, RahyarService, MissionsService, EventsService, Scheduler,
+    Notifier, RahyarService, MissionsService, EventsService, Scheduler, Messenger, AccessLog, Broadcasts,
     { provide: SmsSender, useClass: config.smsProvider === 'kavenegar' ? KavenegarSms : ConsoleSms },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },

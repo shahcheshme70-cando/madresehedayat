@@ -7,6 +7,7 @@ export interface Me {
   mosque: { id: string; name: string } | null; nearMosque: string | null; roles: Role[];
   cores: { id: string; name: string; isLeader: boolean }[]; ssoLinked: boolean;
   imamOf: { id: string; name: string }[]; orgs: { id: string; name: string }[]; allowRahyarMessages: boolean;
+  notifyMessenger: boolean; mfaEnrolled: boolean; mfaPending: boolean;
 }
 
 export type RegStatus = 'REGISTERED' | 'WAITLIST' | 'PENDING' | 'REJECTED' | 'CANCELLED';
@@ -31,7 +32,7 @@ export interface CourseCard {
 
 export interface PathCard {
   id: string; slug: string; title: string; description: string | null; icon: string; color: string;
-  courseCount: number; completedCount: number; courses: CourseCard[];
+  courseCount: number; completedCount: number; courses: CourseCard[]; hasExam?: boolean;
 }
 
 export interface LessonRow { id: string; title: string; type: LessonType; durationSec: number; required: boolean; isFinalQuiz: boolean; done: boolean; best: number | null }

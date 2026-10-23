@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { and, asc, count, desc, eq, gt, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import { normalizeMobile } from '../common/mobile';
 import { Db, InjectDb } from '../db/db.module';
+import { dec, mobileKey } from '../common/crypto';
 import {
   accessGrants, auditLogs, certificates, counties, courseDependencies, courses, enrollments, lessonProgress, lessons,
   modules, mosques, networks, pathItems, paths, provinces, roleGrants, users,
@@ -215,6 +216,11 @@ export class AdminService {
     await this.audit(actor, 'path.create', p.id); return p;
   }
   async updatePath(actor: string, id: string, patch: Partial<typeof paths.$inferInsert>) {
+    const qs = (patch.quiz as any)?.questions as any[] | undefined;
+    if (qs) qs.forEach((q, i) => {
+      if (!q.text?.trim()) throw new BadRequestException({ code: 'bad_quiz', message: `متن پرسش ${i + 1} خالی است` });
+      if (!q.correct?.length) throw new BadRequestException({ code: 'bad_quiz', message: `پاسخ درست پرسش ${i + 1} را مشخص کنید` });
+    });
     const [p] = await this.db.update(paths).set(patch).where(eq(paths.id, id)).returning();
     await this.audit(actor, 'path.update', id); return p;
   }
@@ -231,16 +237,16 @@ export class AdminService {
 
   async listUsers(q: string, page: number) {
     const term = q?.trim();
-    const where = term ? or(ilike(users.firstName, `%${term}%`), ilike(users.lastName, `%${term}%`), ilike(users.mobile, `%${term}%`)) : undefined;
+    const where = term ? or(ilike(users.firstName, `%${term}%`), ilike(users.lastName, `%${term}%`), eq(users.mobile, mobileKey(normalizeMobile(term) ?? '-'))) : undefined;
     const rows = await this.db.select({
-      id: users.id, mobile: users.mobile, firstName: users.firstName, lastName: users.lastName, gender: users.gender, isActive: users.isActive,
+      id: users.id, mobileEnc: users.mobileEnc, firstName: users.firstName, lastName: users.lastName, gender: users.gender, isActive: users.isActive,
       createdAt: users.createdAt, county: counties.name, province: provinces.name, mosque: mosques.name, nearMosque: users.nearMosque,
       roles: sql<string[]>`coalesce((select array_agg(distinct r.role::text) from ${roleGrants} r where r.user_id = ${users.id}), '{}'::text[])`,
       courses: sql<number>`(select count(*)::int from ${enrollments} e where e.user_id = ${users.id})`,
     }).from(users).leftJoin(counties, eq(counties.id, users.countyId)).leftJoin(provinces, eq(provinces.id, counties.provinceId))
       .leftJoin(mosques, eq(mosques.id, users.mosqueId)).where(where).orderBy(desc(users.createdAt)).limit(50).offset(Math.max(0, page - 1) * 50);
     const [{ n }] = await this.db.select({ n: count() }).from(users).where(where);
-    return { total: n, page, rows };
+    return { total: n, page, rows: rows.map(({ mobileEnc, ...r }) => ({ ...r, mobile: dec(mobileEnc) ?? '' })) };
   }
 
   async setActive(actor: string, id: string, isActive: boolean) {
@@ -275,8 +281,8 @@ export class AdminService {
     if (d.networkId) for (const c of d.courseIds) values.push({ courseId: c, networkId: d.networkId, issuedById: actor, expiresAt, note: d.note });
     if (d.mobiles?.length) {
       const norm = d.mobiles.map((m) => normalizeMobile(m)).filter(Boolean) as string[];
-      const found = norm.length ? await this.db.select({ id: users.id, mobile: users.mobile }).from(users).where(inArray(users.mobile, norm)) : [];
-      for (const m of d.mobiles) { const n = normalizeMobile(m); if (!n || !found.some((f) => f.mobile === n)) missing.push(m); }
+      const found = norm.length ? await this.db.select({ id: users.id, mobile: users.mobile }).from(users).where(inArray(users.mobile, norm.map(mobileKey))) : [];
+      for (const m of d.mobiles) { const n = normalizeMobile(m); if (!n || !found.some((f) => f.mobile === mobileKey(n))) missing.push(m); }
       for (const u of found) for (const c of d.courseIds) values.push({ courseId: c, userId: u.id, issuedById: actor, expiresAt, note: d.note });
     }
     if (values.length) await this.db.insert(accessGrants).values(values);

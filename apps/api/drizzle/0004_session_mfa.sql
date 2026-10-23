@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN "mfa_at" timestamp with time zone;

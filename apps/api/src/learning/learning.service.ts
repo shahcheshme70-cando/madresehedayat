@@ -2,9 +2,10 @@ import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Inj
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { randomInt } from 'node:crypto';
 import { Db, InjectDb } from '../db/db.module';
+import { decJson, encJson } from '../common/crypto';
 import {
   accessGrants, certificates, coreMemberships, cores, courseDependencies, courses, enrollments, lessonProgress,
-  lessons, modules, networkMembers, paths, pathItems, quizAttempts, roleGrants, users,
+  lessons, modules, networkMembers, pathAttempts, paths, pathItems, quizAttempts, roleGrants, users,
 } from '../db/schema';
 import { gradeQuiz, publicContent, QuizContent } from './lesson-content';
 
@@ -66,7 +67,7 @@ export class LearningService {
       const cs = items.filter((i) => i.pathId === p.id && this.canSee(i.course, granted)).map((i) => i.course);
       const done = cs.filter((c) => mine.get(c.id)?.completedAt).length;
       return { id: p.id, slug: p.slug, title: p.title, description: p.description, icon: p.icon, color: p.color,
-        courseCount: cs.length, completedCount: done, courses: cs.map((c) => ({ ...this.courseCard(c), me: mine.get(c.id) ?? null })) };
+        courseCount: cs.length, completedCount: done, hasExam: !!(p.quiz as any)?.questions?.length, courses: cs.map((c) => ({ ...this.courseCard(c), me: mine.get(c.id) ?? null })) };
     }).filter((p) => p.courseCount > 0);
   }
 
@@ -205,7 +206,7 @@ export class LearningService {
       id: l.id, title: l.title, type: l.type, durationSec: l.durationSec, required: l.required, isFinalQuiz: l.isFinalQuiz,
       content: publicContent(l.type, l.content),
       course: { id: c.id, slug: c.slug, title: c.title, passScore: c.passScore },
-      progress: p ? { positionSec: p.positionSec, completedAt: p.completedAt, data: p.data } : null,
+      progress: p ? { positionSec: p.positionSec, completedAt: p.completedAt, data: decJson(p.data) } : null,
       quiz: l.type === 'QUIZ' ? { attempts, nextAllowedAt: this.nextAttemptAt(attempts.map((a) => a.at)) } : undefined,
     };
   }
@@ -225,7 +226,7 @@ export class LearningService {
     if (l.type === 'MISSION' && (completed || data !== undefined)) throw new BadRequestException({ code: 'use_mission_submit', message: 'گزارش مأموریت از بخش مأموریت فرستاده می‌شود' });
     const set: Partial<typeof lessonProgress.$inferInsert> = { updatedAt: new Date() };
     if (typeof body.positionSec === 'number') set.positionSec = Math.max(0, Math.floor(body.positionSec));
-    if (data !== undefined) set.data = data;
+    if (data !== undefined) set.data = encJson(data);
     if (completed) set.completedAt = new Date();
     await this.db.insert(lessonProgress).values({ userId, lessonId, positionSec: set.positionSec ?? 0, data: set.data ?? null, completedAt: set.completedAt ?? null })
       .onConflictDoUpdate({ target: [lessonProgress.userId, lessonProgress.lessonId], set });
@@ -309,6 +310,60 @@ export class LearningService {
     throw new Error('certificate_code_collision');
   }
 
+  // ───────── آزمون جامع مسیر (۲.۵) ─────────
+
+  private async pathFor(slug: string, userId: string) {
+    const p = await this.db.query.paths.findFirst({ where: and(eq(paths.slug, slug), eq(paths.published, true)) });
+    if (!p) throw new NotFoundException({ code: 'no_path', message: 'مسیر پیدا نشد' });
+    const items = await this.db.select({ courseId: pathItems.courseId, title: courses.title }).from(pathItems).innerJoin(courses, eq(courses.id, pathItems.courseId)).where(eq(pathItems.pathId, p.id));
+    const mine = await this.myStates(userId);
+    const open = items.filter((i) => !mine.get(i.courseId)?.completedAt);
+    return { p, open };
+  }
+
+  async pathExam(userId: string, slug: string) {
+    const { p, open } = await this.pathFor(slug, userId);
+    const quiz = p.quiz as QuizContent | null;
+    if (!quiz?.questions?.length) throw new NotFoundException({ code: 'no_exam', message: 'این مسیر آزمون جامع ندارد' });
+    const attempts = await this.db.select({ score: pathAttempts.score, passed: pathAttempts.passed, at: pathAttempts.at }).from(pathAttempts)
+      .where(and(eq(pathAttempts.userId, userId), eq(pathAttempts.pathId, p.id))).orderBy(desc(pathAttempts.at));
+    const cert = await this.db.query.certificates.findFirst({ where: and(eq(certificates.userId, userId), eq(certificates.pathId, p.id)) });
+    return {
+      path: { slug: p.slug, title: p.title }, passScore: p.passScore, locked: open.length > 0, waitingFor: open.map((o) => o.title),
+      intro: quiz.intro ?? null, questions: open.length ? [] : publicContent('QUIZ', quiz).questions,
+      attempts, nextAllowedAt: this.nextAttemptAt(attempts.map((a) => a.at)), certificate: cert && !cert.revokedAt ? { code: cert.code, score: cert.score } : null,
+    };
+  }
+
+  async submitPathExam(userId: string, slug: string, answers: Record<string, string[]>) {
+    const { p, open } = await this.pathFor(slug, userId);
+    const quiz = p.quiz as QuizContent | null;
+    if (!quiz?.questions?.length) throw new NotFoundException({ code: 'no_exam', message: 'این مسیر آزمون جامع ندارد' });
+    if (open.length) throw new ForbiddenException({ code: 'path_open', message: 'اول همهٔ دوره‌های مسیر را تمام کنید' });
+    const prev = await this.db.select({ at: pathAttempts.at }).from(pathAttempts).where(and(eq(pathAttempts.userId, userId), eq(pathAttempts.pathId, p.id))).orderBy(desc(pathAttempts.at));
+    const next = this.nextAttemptAt(prev.map((x) => x.at));
+    if (next) throw new HttpException({ code: 'retry_wait', message: 'برای تلاش بعدی کمی صبر کنید', nextAllowedAt: next }, HttpStatus.TOO_MANY_REQUESTS);
+    const { score, results } = gradeQuiz(quiz, answers ?? {});
+    const passed = score >= p.passScore;
+    await this.db.insert(pathAttempts).values({ userId, pathId: p.id, score, passed });
+    let certificate: { code: string } | undefined;
+    if (passed) {
+      const existing = await this.db.query.certificates.findFirst({ where: and(eq(certificates.userId, userId), eq(certificates.pathId, p.id)) });
+      if (existing) {
+        await this.db.update(certificates).set({ score: sql`greatest(coalesce(${certificates.score}, 0), ${score})` }).where(eq(certificates.id, existing.id));
+        certificate = { code: existing.code };
+      } else {
+        const u = (await this.db.query.users.findFirst({ where: eq(users.id, userId) }))!;
+        for (let i = 0; i < 5 && !certificate; i++) {
+          const code = 'HD-' + this.rand(4) + '-' + this.rand(4);
+          try { await this.db.insert(certificates).values({ code, userId, pathId: p.id, holderName: `${u.firstName} ${u.lastName}`, courseTitle: `مسیر «${p.title}»`, score }); certificate = { code }; }
+          catch (e: any) { if (e?.code !== '23505') throw e; }
+        }
+      }
+    }
+    return { score, passed, passScore: p.passScore, results, certificate: certificate ?? null, nextAllowedAt: passed ? null : this.nextAttemptAt([new Date(), ...prev.map((x) => x.at)]) };
+  }
+
   private rand(n: number) { let s = ''; for (let i = 0; i < n; i++) s += CODE_ALPHA[randomInt(CODE_ALPHA.length)]; return s; }
 
   async myCourses(userId: string) {
@@ -321,8 +376,8 @@ export class LearningService {
   }
 
   async myCertificates(userId: string) {
-    return this.db.select({ code: certificates.code, courseTitle: certificates.courseTitle, issuedAt: certificates.issuedAt, score: certificates.score, courseSlug: courses.slug })
-      .from(certificates).innerJoin(courses, eq(courses.id, certificates.courseId))
+    return this.db.select({ code: certificates.code, courseTitle: certificates.courseTitle, issuedAt: certificates.issuedAt, score: certificates.score, courseSlug: courses.slug, pathSlug: paths.slug })
+      .from(certificates).leftJoin(courses, eq(courses.id, certificates.courseId)).leftJoin(paths, eq(paths.id, certificates.pathId))
       .where(and(eq(certificates.userId, userId), isNull(certificates.revokedAt))).orderBy(desc(certificates.issuedAt));
   }
 

@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { normalizeMobile } from '../common/mobile';
 import { Db, InjectDb } from '../db/db.module';
+import { dec, mobileKey } from '../common/crypto';
 import {
   coreMemberships, cores, counties, networkMembers, networks, provinces, rahyarAssignments, rahyarPositions, regionProvinces, roleGrants, users,
 } from '../db/schema';
@@ -130,7 +131,7 @@ export class RahyarService {
     const s = await this.snapshot();
     const ps = s.positions.filter((p) => p.gender === gender);
     const holders = ps.map((p) => p.holderId).filter(Boolean) as string[];
-    const hs = holders.length ? await this.db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, mobile: users.mobile }).from(users).where(inArray(users.id, holders)) : [];
+    const hs = holders.length ? await this.db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, mobileEnc: users.mobileEnc }).from(users).where(inArray(users.id, holders)) : [];
     const pv = await this.db.select().from(provinces);
     const cs = await this.db.select().from(counties);
     // شمار کنشگرانی که مسئولشان هر جایگاه است
@@ -138,7 +139,7 @@ export class RahyarService {
     const load = new Map<string, number>();
     for (const l of learners) { const r = this.resolve(s, l); if (r.responsible) load.set(r.responsible.id, (load.get(r.responsible.id) ?? 0) + 1); }
     return ps.map((p) => ({
-      ...p, holder: hs.find((h) => h.id === p.holderId) ?? null,
+      ...p, holder: (() => { const h = hs.find((x) => x.id === p.holderId); return h ? { id: h.id, firstName: h.firstName, lastName: h.lastName, mobile: dec(h.mobileEnc) } : null; })(),
       province: pv.find((x) => x.id === p.provinceId)?.name ?? null, county: cs.find((x) => x.id === p.countyId)?.name ?? null,
       regionProvinces: (s.regionProv.get(p.id) ?? []).map((id) => ({ id, name: pv.find((x) => x.id === id)?.name })),
       learnerCount: load.get(p.id) ?? 0,
@@ -179,7 +180,7 @@ export class RahyarService {
       if (!d.holderMobile) set.holderId = null;
       else {
         const m = normalizeMobile(d.holderMobile);
-        const u = m ? await this.db.query.users.findFirst({ where: eq(users.mobile, m) }) : undefined;
+        const u = m ? await this.db.query.users.findFirst({ where: eq(users.mobile, mobileKey(m)) }) : undefined;
         if (!u) throw new BadRequestException({ code: 'no_user', message: 'کسی با این شماره ثبت‌نام نکرده؛ اول باید در مدرسه حساب بسازد' });
         if (u.gender && u.gender !== p.gender) throw new BadRequestException({ code: 'gender', message: p.gender === 'MALE' ? 'این جایگاه در درخت برادران است' : 'این جایگاه در درخت بانور است' });
         set.holderId = u.id;

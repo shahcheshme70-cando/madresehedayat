@@ -4,13 +4,14 @@ import { and, count, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { AuthUser, CurrentUser } from '../common/auth.decorators';
 import { Db, InjectDb } from '../db/db.module';
 import { notifications } from '../db/schema';
+import { Messenger } from '../messenger/messenger';
 
 export interface NotifyInput { kind: string; title: string; body?: string; link?: string }
 
 @Injectable()
 export class Notifier {
   private readonly log = new Logger('Notify');
-  constructor(@InjectDb() private readonly db: Db) {}
+  constructor(@InjectDb() private readonly db: Db, private readonly messenger: Messenger) {}
 
   /** اعلان درون‌برنامه برای یک یا چند نفر. پیامک یادآوری‌ها از همین‌جا به سرویس پیامک وصل می‌شود. */
   async send(userIds: string[] | string, n: NotifyInput) {
@@ -20,6 +21,8 @@ export class Notifier {
       await this.db.insert(notifications).values(ids.slice(i, i + 500).map((userId) => ({ userId, kind: n.kind, title: n.title, body: n.body, link: n.link })));
     }
     this.log.log(`${n.kind} → ${ids.length} نفر`);
+    // پیام‌رسان (بله) پشت صحنه؛ کندی یا خطایش جلوی کار را نمی‌گیرد
+    this.messenger.push(ids, n).catch((e) => this.log.warn(`پیام‌رسان: ${e?.message ?? e}`));
   }
 }
 

@@ -39,6 +39,12 @@ export class LearningController {
   @Post('lessons/:id/quiz') @HttpCode(200)
   quiz(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: QuizDto) { return this.learning.submitQuiz(u.id, id, dto.answers); }
 
+  @Get('paths/:slug/exam')
+  pathExam(@CurrentUser() u: AuthUser, @Param('slug') slug: string) { return this.learning.pathExam(u.id, slug); }
+
+  @Post('paths/:slug/exam') @HttpCode(200)
+  submitPathExam(@CurrentUser() u: AuthUser, @Param('slug') slug: string, @Body() dto: QuizDto) { return this.learning.submitPathExam(u.id, slug, dto.answers); }
+
   @Get('me/courses')
   myCourses(@CurrentUser() u: AuthUser) { return this.learning.myCourses(u.id); }
 

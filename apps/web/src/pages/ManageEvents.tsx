@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { fa, jDateTime, toEn } from '../lib/fa';
 import { DateBadge } from './Events';
+import { JalaliInput } from '../components/JalaliInput';
 
 const useBase = () => (useLocation().pathname.startsWith('/admin') ? '/admin/events' : '/manage/events');
 
@@ -44,8 +45,8 @@ export function ManageEventList() {
   );
 }
 
-const toLocal = (v?: string | null) => { if (!v) return ''; const d = new Date(v); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
-const fromLocal = (v: string) => (v ? new Date(v).toISOString() : null);
+const toLocal = (v?: string | null) => v ?? '';
+const fromLocal = (v: string) => v || null;
 
 export function EventEditor() {
   const { id } = useParams();
@@ -76,7 +77,6 @@ export function EventEditor() {
   if (!f || (id && ex.isLoading)) return <Spinner />;
   const set = (k: string) => (e: { target: { value: string } }) => setF((x: any) => ({ ...x, [k]: e.target.value }));
   const counties = geo.data?.find((p) => p.id === f.audienceProvinceId)?.counties ?? [];
-  const when = (v: string) => (v ? <span className="hint">{jDateTime(new Date(v))}</span> : null);
   return (
     <div className="rise mx-auto grid max-w-3xl gap-6">
       <Link to={id ? `${base}/${id}` : base} className="text-sm font-bold text-leaf-ink">→ بازگشت</Link>
@@ -87,8 +87,8 @@ export function EventEditor() {
           {!onlyOnline && <div className="seg w-fit">{[['IN_PERSON', 'حضوری'], ['ONLINE', 'آنلاین']].map(([k, t]) => <button type="button" key={k} aria-pressed={f.kind === k} onClick={() => setF({ ...f, kind: k })}>{t}</button>)}</div>}
           {onlyOnline && <p className="hint">مدرس‌ها برنامهٔ آنلاینِ خودشان را می‌سازند.</p>}
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="field"><label htmlFor="s">شروع</label><input id="s" type="datetime-local" className="input ltr" required value={f.startsAt} onChange={set('startsAt')} />{when(f.startsAt)}</div>
-            <div className="field"><label htmlFor="en">پایان</label><input id="en" type="datetime-local" className="input ltr" required value={f.endsAt} onChange={set('endsAt')} />{when(f.endsAt)}</div>
+            <div className="field"><label htmlFor="s">شروع</label><JalaliInput id="s" label="شروع" value={f.startsAt} onChange={(v) => setF((x: any) => ({ ...x, startsAt: v, endsAt: x.endsAt || (v ? new Date(new Date(v).getTime() + 2 * 3600_000).toISOString() : '') }))} /></div>
+            <div className="field"><label htmlFor="en">پایان</label><JalaliInput id="en" label="پایان" value={f.endsAt} onChange={(v) => setF((x: any) => ({ ...x, endsAt: v }))} /></div>
           </div>
           {f.kind === 'IN_PERSON' ? <>
             <div className="field"><label htmlFor="loc">نشانی</label><input id="loc" className="input" value={f.location ?? ''} onChange={set('location')} placeholder="شهر، مسجد، سالن" /></div>
@@ -103,7 +103,7 @@ export function EventEditor() {
           <h2 className="font-extrabold">ثبت‌نام</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="field"><label htmlFor="c">ظرفیت <span className="font-normal text-muted">(خالی = بی‌سقف)</span></label><input id="c" inputMode="numeric" className="input ltr" value={f.capacity ?? ''} onChange={set('capacity')} /></div>
-            <div className="field"><label htmlFor="dl">مهلت ثبت‌نام <span className="font-normal text-muted">(اختیاری)</span></label><input id="dl" type="datetime-local" className="input ltr" value={f.registrationDeadline ?? ''} onChange={set('registrationDeadline')} />{when(f.registrationDeadline)}</div>
+            <div className="field"><label htmlFor="dl">مهلت ثبت‌نام <span className="font-normal text-muted">(اختیاری)</span></label><JalaliInput id="dl" optional label="مهلت ثبت‌نام" value={f.registrationDeadline ?? ''} onChange={(v) => setF((x: any) => ({ ...x, registrationDeadline: v }))} /></div>
           </div>
           <label className="flex items-center gap-3"><input type="checkbox" className="size-5 accent-[var(--leaf)]" checked={!!f.waitlist} onChange={(e) => setF({ ...f, waitlist: e.target.checked })} />وقتی پر شد، فهرست انتظار داشته باشد</label>
           <label className="flex items-center gap-3"><input type="checkbox" className="size-5 accent-[var(--leaf)]" checked={!!f.requiresApproval} onChange={(e) => setF({ ...f, requiresApproval: e.target.checked })} />ثبت‌نام‌ها را خودم تأیید کنم</label>

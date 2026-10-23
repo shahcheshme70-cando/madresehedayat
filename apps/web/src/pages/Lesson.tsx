@@ -260,6 +260,7 @@ interface MissionThread {
   lesson: { id: string; title: string; goal?: string }; course: { id: string; title: string; missionRule: 'ON_SUBMIT' | 'ON_APPROVAL' };
   data: { status?: string; did?: string; learned?: string; checks?: Record<string, boolean>; mainPhoto?: string; evidence?: string[]; round?: number } | null;
   messages: { id: string; kind: string; body: string; createdAt: string; authorId: string; firstName: string; lastName: string }[];
+  sample?: { status: string; named: boolean | null } | null;
 }
 
 const KIND_FA: Record<string, string> = { REPORT: 'گزارش', FEEDBACK: 'بازخورد', REVISE: 'درخواست اصلاح', APPROVE: 'تأیید', REPLY: 'پاسخ' };
@@ -314,6 +315,32 @@ function PhotoPicker({ kind, value, onChange, label }: { kind: 'main' | 'evidenc
         )}
       </div>
     </div>
+  );
+}
+
+function SampleConsent({ lessonId, onDone }: { lessonId: string; onDone: () => void }) {
+  const toast = useToast();
+  const go = async (decision: 'named' | 'anon' | 'no') => {
+    try { await api(`/missions/${lessonId}/sample`, { body: { decision } }); toast(decision === 'no' ? 'باشد؛ گزارش فقط برای شما و راهیارتان می‌ماند' : 'ممنون؛ پس از تأیید ستاد منتشر می‌شود'); onDone(); }
+    catch (e) { toast((e as Error).message, 'err'); }
+  };
+  return (
+    <div className="grid gap-3 rounded-2xl border border-leaf bg-leaf-soft p-4">
+      <b className="text-ink">راهیارتان پیشنهاد داده گزارشتان «نمونه» شود</b>
+      <p className="text-sm text-body">اگر اجازه بدهید، متن گزارش (بدون عکس) زیر همین مأموریت برای دیگران نشان داده می‌شود تا الهام بگیرند. می‌توانید نامتان بیاید یا نه.</p>
+      <div className="flex flex-wrap gap-2"><button className="btn btn-primary btn-sm" onClick={() => go('named')}>بله، با نامم</button><button className="btn btn-secondary btn-sm" onClick={() => go('anon')}>بله، بی‌نام</button><button className="btn btn-ghost btn-sm" onClick={() => go('no')}>نه</button></div>
+    </div>
+  );
+}
+
+function Samples({ lessonId }: { lessonId: string }) {
+  const q = useQuery({ queryKey: ['samples', lessonId], queryFn: () => api<{ text: string; authorLabel: string }[]>(`/lessons/${lessonId}/samples`) });
+  if (!q.data?.length) return null;
+  return (
+    <section className="grid gap-3">
+      <h3 className="font-extrabold">نمونه‌هایی از دیگران</h3>
+      {q.data.map((s, i) => <figure key={i} className="card p-4"><blockquote className="whitespace-pre-line leading-8 text-body">{s.text}</blockquote><figcaption className="mt-2 text-sm text-muted">— {s.authorLabel}</figcaption></figure>)}
+    </section>
   );
 }
 
@@ -378,6 +405,8 @@ function Mission({ l, onChange }: { l: LessonDetail; onChange: (c?: Completion |
         </div>
       )}
 
+      {t.data?.sample?.status === 'PROPOSED' && <SampleConsent lessonId={l.id} onDone={() => qc.invalidateQueries({ queryKey: ['mission', l.id] })} />}
+      {t.data?.sample && ['CONSENTED', 'PUBLISHED'].includes(t.data.sample.status) && <p className="chip chip-leaf w-fit">{t.data.sample.status === 'PUBLISHED' ? 'گزارش شما به‌عنوان نمونه منتشر شده' : 'اجازهٔ نمونه دادید؛ منتظر تأیید ستاد'}</p>}
       {(t.data?.messages.length ?? 0) > 1 && (
         <section className="grid gap-3">
           <h3 className="font-extrabold">گفت‌وگو با راهیار</h3>
@@ -391,6 +420,7 @@ function Mission({ l, onChange }: { l: LessonDetail; onChange: (c?: Completion |
           <button className="btn btn-secondary btn-sm w-fit" disabled={!reply.trim() || send.isPending} onClick={() => send.mutate()}>فرستادن</button>
         </div>
       )}
+      <Samples lessonId={l.id} />
     </div>
   );
 }

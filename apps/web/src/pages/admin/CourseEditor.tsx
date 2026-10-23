@@ -254,7 +254,8 @@ function ContentEditor({ type, c, set }: { type: LessonType; c: any; set: (c: an
         {c.provider === 'file'
           ? <div className="grid gap-2"><Uploader accept="video/mp4,video/webm" label="بارگذاری ویدیو" onDone={(key) => set({ ...c, fileKey: key })} />{c.fileKey && <span className="hint">فایل: {c.fileKey}</span>}<p className="hint">ویدیوی روی سرور مدرسه جای پخش را ذخیره می‌کند و با ۹۰٪ دیدن، درس خودکار تمام می‌شود.</p></div>
           : <div className="field"><label htmlFor="ap">پیوند ویدیو در آپارات</label><input id="ap" className="input ltr" placeholder="https://www.aparat.com/v/abc123" value={c.aparatHash ?? ''} onChange={(e) => set({ ...c, aparatHash: aparatHash(e.target.value) })} />
-              <span className="hint">پیوند صفحهٔ ویدیو را بچسبانید؛ شناسه‌اش خودکار برداشته می‌شود.{c.aparatHash ? ` شناسه: ${c.aparatHash}` : ''}</span></div>}
+              <span className="hint">پیوند صفحهٔ ویدیو را بچسبانید؛ شناسه‌اش خودکار برداشته می‌شود.{c.aparatHash ? ` شناسه: ${c.aparatHash}` : ''}</span>
+              <p className="rounded-xl bg-flame-soft p-3 text-sm text-ink"><b className="text-flame-ink">توجه: </b>ویدیوی آپارات پایان خودکار و پرسش وسط ویدیو ندارد؛ کنشگر خودش «دیدم» را می‌زند. برای ویدیوهای کوتاه و کلیدی که دیده شدنشان مهم است، «فایل روی سرور مدرسه» را انتخاب کنید.</p></div>}
         <div className="field"><label htmlFor="sm">خلاصه <span className="font-normal text-muted">(اختیاری)</span></label><textarea id="sm" className="input" value={c.summary ?? ''} onChange={(e) => set({ ...c, summary: e.target.value })} /></div>
       </div>
     );
@@ -287,7 +288,7 @@ function ContentEditor({ type, c, set }: { type: LessonType; c: any; set: (c: an
   }
 }
 
-function QuizBuilder({ c, set }: { c: any; set: (c: any) => void }) {
+export function QuizBuilder({ c, set }: { c: any; set: (c: any) => void }) {
   const qs: any[] = c.questions ?? [];
   const up = (i: number, q: any) => set({ ...c, questions: qs.map((x, j) => (j === i ? q : x)) });
   return (

@@ -1,11 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
-import { Route, Search } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Award, Route, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { CourseCard } from '../components/CourseCard';
 import { Empty, ErrorBox, Spinner } from '../components/ui';
 import { api } from '../lib/api';
-import { fa } from '../lib/fa';
+import { fa, jDate } from '../lib/fa';
 import type { CourseCard as C, PathCard } from '../lib/types';
 
 type Filter = 'all' | 'mine' | 'done' | 'new';
@@ -84,6 +84,70 @@ export function PathPage() {
           </li>
         ))}
       </ol>
+      {p.hasExam && (
+        <section className="card flex flex-wrap items-center gap-4 p-5">
+          <Award className="size-11 shrink-0 rounded-xl bg-flame-soft p-2.5 text-flame-ink" />
+          <div className="min-w-0 flex-1"><b className="block text-ink">آزمون جامع مسیر</b><span className="text-sm text-muted">{p.completedCount < p.courseCount ? 'وقتی همهٔ دوره‌های مسیر تمام شد باز می‌شود.' : 'همهٔ دوره‌ها تمام شده؛ با قبولی، گواهی مسیر می‌گیرید.'}</span></div>
+          <Link to={`/paths/${p.slug}/exam`} className={`btn ${p.completedCount < p.courseCount ? 'btn-secondary' : 'btn-primary'}`}>{p.completedCount < p.courseCount ? 'دیدن' : 'شروع آزمون'}</Link>
+        </section>
+      )}
+    </div>
+  );
+}
+
+interface PathExamData {
+  path: { slug: string; title: string }; passScore: number; locked: boolean; waitingFor: string[]; intro: string | null;
+  questions: { id: string; kind: 'single' | 'multi' | 'tf'; text: string; options: { id: string; text: string }[] }[];
+  attempts: { score: number; passed: boolean; at: string }[]; nextAllowedAt: string | null; certificate: { code: string; score: number | null } | null;
+}
+
+export function PathExam() {
+  const { slug = '' } = useParams();
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ['path-exam', slug], queryFn: () => api<PathExamData>(`/paths/${slug}/exam`) });
+  const [ans, setAns] = useState<Record<string, string[]>>({});
+  const [res, setRes] = useState<{ score: number; passed: boolean; results: { id: string; ok: boolean; correct: string[]; explain: string }[]; certificate: { code: string } | null } | null>(null);
+  const [err, setErr] = useState('');
+  const submit = useMutation({
+    mutationFn: () => api<typeof res>(`/paths/${slug}/exam`, { body: { answers: ans } }),
+    onSuccess: (r) => { setRes(r); qc.invalidateQueries({ queryKey: ['path-exam', slug] }); qc.invalidateQueries({ queryKey: ['certs'] }); window.scrollTo({ top: 0, behavior: 'smooth' }); },
+    onError: (e) => setErr((e as Error).message),
+  });
+  if (q.isLoading) return <Spinner />;
+  if (q.error) return <Empty icon={Route} title={(q.error as Error).message} />;
+  const e = q.data!;
+  const pick = (qq: PathExamData['questions'][number], o: string) => setAns((a) => ({ ...a, [qq.id]: qq.kind === 'multi' ? (a[qq.id]?.includes(o) ? a[qq.id].filter((x) => x !== o) : [...(a[qq.id] ?? []), o]) : [o] }));
+  const answered = e.questions.every((qq) => ans[qq.id]?.length);
+  return (
+    <div className="rise mx-auto grid max-w-3xl gap-6">
+      <nav className="text-sm text-muted"><Link to={`/paths/${slug}`} className="text-leaf-ink">{e.path.title}</Link> / آزمون جامع</nav>
+      <h1 className="text-[clamp(22px,3vw,30px)] font-extrabold">آزمون جامع مسیر «{e.path.title}»</h1>
+      {e.certificate && <div className="card flex flex-wrap items-center gap-3 p-4"><Award className="size-8 text-flame-ink" /><span className="flex-1">گواهی مسیر را گرفته‌اید{e.certificate.score != null ? ` (نمره ٪${fa(e.certificate.score)})` : ''}.</span><Link className="btn btn-secondary btn-sm" to={`/verify/${e.certificate.code}`}>دیدن گواهی</Link></div>}
+      {e.locked ? (
+        <div className="card grid gap-2 p-5"><b className="text-ink">آزمون هنوز باز نیست</b><p className="text-body">اول این دوره‌ها را تمام کنید:</p><ul className="list-inside list-disc text-body">{e.waitingFor.map((w) => <li key={w}>{w}</li>)}</ul></div>
+      ) : res ? (
+        <div className={`card grid gap-3 p-5 ${res.passed ? 'border-leaf' : ''}`}>
+          <b className="text-xl text-ink">{res.passed ? 'قبول شدید' : 'این بار نشد'} — نمرهٔ ٪{fa(res.score)}</b>
+          <p className="text-body">{res.passed ? (res.certificate ? 'گواهی مسیر صادر شد و در «گواهی‌ها و پیشرفت» است.' : '') : `برای قبولی ٪${fa(e.passScore)} لازم است. پاسخ‌ها را مرور کنید و دوباره امتحان کنید.`}</p>
+          <ol className="grid gap-2">{e.questions.map((qq, i) => { const r = res.results.find((x) => x.id === qq.id); return <li key={qq.id} className={`rounded-xl p-3 text-sm ${r?.ok ? 'bg-leaf-soft' : 'bg-rose-soft'}`}><b>{fa(i + 1)}. {qq.text}</b>{r?.explain && <p className="mt-1">{r.explain}</p>}</li>; })}</ol>
+          <div className="flex gap-2">{res.certificate && <Link className="btn btn-primary" to={`/verify/${res.certificate.code}`}>دیدن گواهی</Link>}{!res.passed && <button className="btn btn-secondary" onClick={() => { setRes(null); setAns({}); }}>تلاش دوباره</button>}</div>
+        </div>
+      ) : (
+        <>
+          {e.intro && <p className="prose-fa">{e.intro}</p>}
+          <p className="hint">نمرهٔ قبولی ٪{fa(e.passScore)}. دو بار اول بی‌فاصله، از بار سوم هر ۲۴ ساعت یک بار. بهترین نمره می‌ماند.</p>
+          {e.nextAllowedAt ? <p className="rounded-xl bg-flame-soft p-3 text-ink">تلاش بعدی از {jDate(e.nextAllowedAt)} ممکن است.</p> : (
+            <>
+              <ol className="grid gap-4">{e.questions.map((qq, i) => (
+                <li key={qq.id} className="card p-5"><p className="font-bold text-ink"><span className="text-muted">{fa(i + 1)}. </span>{qq.text}</p>
+                  <div className="mt-3 grid gap-2">{qq.options.map((o) => { const sel = ans[qq.id]?.includes(o.id); return (
+                    <button key={o.id} type="button" onClick={() => pick(qq, o.id)} aria-pressed={!!sel} className={`rounded-xl border px-4 py-3 text-start ${sel ? 'border-leaf bg-leaf-soft' : 'border-line hover:border-line-strong'}`}>{o.text}</button>); })}</div></li>
+              ))}</ol>
+              <div className="flex items-center gap-3"><button className="btn btn-primary btn-lg" disabled={!answered || submit.isPending} onClick={() => { setErr(''); submit.mutate(); }}>ثبت پاسخ‌ها</button>{err && <span className="err">{err}</span>}</div>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }

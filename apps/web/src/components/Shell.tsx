@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Award, Bell, BookOpen, CalendarDays, Compass, House, Landmark, LayoutDashboard, LogOut, MessageCircle, Settings, Building2, UsersRound, CalendarCog } from 'lucide-react';
+import { Award, Bell, LifeBuoy, Megaphone, BookOpen, CalendarDays, Compass, House, Landmark, LayoutDashboard, LogOut, MessageCircle, Settings, Building2, UsersRound, CalendarCog } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { api } from '../lib/api';
@@ -36,7 +36,9 @@ export function useRoleLinks() {
   if (me?.cores?.length || me?.gender === 'FEMALE') links.push({ to: '/cores', label: 'هسته‌های من', icon: UsersRound });
   if (me?.orgs?.length) links.push({ to: '/org', label: 'پنل سازمان', icon: Building2 });
   if (isStaff || has('RAHYAR', 'INSTRUCTOR')) links.push({ to: '/manage/events', label: 'برگزاری برنامه', icon: CalendarCog });
+  if (isStaff || has('RAHYAR') || me?.imamOf?.length || me?.cores?.some((c) => c.isLeader)) links.push({ to: '/broadcast', label: 'پیام گروهی', icon: Megaphone });
   links.push({ to: '/messages', label: 'پیام با راهیار', icon: MessageCircle });
+  links.push({ to: '/help', label: 'کمک و پشتیبانی', icon: LifeBuoy });
   return links;
 }
 

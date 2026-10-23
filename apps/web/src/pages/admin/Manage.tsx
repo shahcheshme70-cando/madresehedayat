@@ -7,12 +7,14 @@ import { useAuth } from '../../lib/auth';
 import { ago, fa, jDate, ROLE_LABEL } from '../../lib/fa';
 import type { Role } from '../../lib/types';
 import { PageHead } from './AdminShell';
+import { JalaliInput } from '../../components/JalaliInput';
+import { QuizBuilder } from './CourseEditor';
 import type { AdminCourse } from './Courses';
 
 const useCourses = () => useQuery({ queryKey: ['admin-courses'], queryFn: () => api<AdminCourse[]>('/admin/courses') });
 
 /* ───────── مسیرها ───────── */
-interface APath { id: string; title: string; description: string | null; published: boolean; courses: { courseId: string; title: string; status: string }[] }
+interface APath { id: string; title: string; description: string | null; published: boolean; quiz?: any; passScore?: number; courses: { courseId: string; title: string; status: string }[] }
 
 export function Paths() {
   const q = useQuery({ queryKey: ['admin-paths'], queryFn: () => api<APath[]>('/admin/paths') });
@@ -45,12 +47,15 @@ function PathEditor({ p }: { p: APath }) {
   const toast = useToast();
   const [ids, setIds] = useState(p.courses.map((c) => c.courseId));
   const [f, setF] = useState({ title: p.title, description: p.description ?? '' });
+  const [quiz, setQuiz] = useState<any>(p.quiz ?? { questions: [] });
+  const [pass, setPass] = useState(p.passScore ?? 60);
+  const [showQuiz, setShowQuiz] = useState(false);
   const [pick, setPick] = useState('');
   useEffect(() => setIds(p.courses.map((c) => c.courseId)), [p.courses]);
   const inval = () => qc.invalidateQueries({ queryKey: ['admin-paths'] });
   const save = async () => {
     try {
-      await api(`/admin/paths/${p.id}`, { method: 'PATCH', body: f });
+      await api(`/admin/paths/${p.id}`, { method: 'PATCH', body: { ...f, quiz: quiz.questions?.length ? quiz : null, passScore: pass } });
       await api(`/admin/paths/${p.id}/courses`, { method: 'PUT', body: { courseIds: ids } });
       inval(); toast('مسیر ذخیره شد');
     } catch (e) { toast((e as Error).message, 'err'); }
@@ -78,6 +83,15 @@ function PathEditor({ p }: { p: APath }) {
       ))}</ol>
       <div className="flex gap-2"><select className="input h-10 flex-1" value={pick} onChange={(e) => setPick(e.target.value)}><option value="">افزودن دوره به مسیر…</option>{courses.data?.filter((c) => !ids.includes(c.id)).map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}</select>
         <button className="btn btn-secondary btn-sm h-10" disabled={!pick} onClick={() => { setIds((x) => [...x, pick]); setPick(''); }}><Plus className="size-4" /></button></div>
+      <div className="rounded-xl border border-line p-3">
+        <button type="button" className="flex w-full items-center justify-between text-sm font-bold text-ink" onClick={() => setShowQuiz((v) => !v)} aria-expanded={showQuiz}>
+          <span>آزمون جامع مسیر {quiz.questions?.length ? <span className="chip chip-leaf ms-1">{fa(quiz.questions.length)} پرسش</span> : <span className="chip ms-1">ندارد</span>}</span><span className="text-muted">{showQuiz ? 'بستن' : 'ویرایش'}</span></button>
+        {showQuiz && <div className="mt-3 grid gap-3">
+          <p className="hint">پس از تمام شدن همهٔ دوره‌های مسیر باز می‌شود؛ قبولی = گواهی مسیر.</p>
+          <div className="field w-40"><label htmlFor={`ps-${p.id}`}>نمرهٔ قبولی (٪)</label><input id={`ps-${p.id}`} className="input h-10 ltr" inputMode="numeric" value={pass} onChange={(e) => setPass(Math.max(0, Math.min(100, Number(e.target.value.replace(/\D/g, '')) || 0)))} /></div>
+          <QuizBuilder c={quiz} set={setQuiz} />
+        </div>}
+      </div>
       <div><button className="btn btn-primary btn-sm" onClick={save}>ذخیرهٔ مسیر</button></div>
     </section>
   );
@@ -143,7 +157,8 @@ function UserRoles({ u, canEdit, onDone }: { u: URow; canEdit: boolean; onDone: 
         <div className="flex flex-wrap gap-2">{(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
           <button key={r} disabled={!canEdit} onClick={() => toggle(r)} aria-pressed={roles.includes(r)} className={`chip h-9 cursor-pointer px-3 ${roles.includes(r) ? 'chip-leaf' : ''}`}>{roles.includes(r) && <Check className="size-4" />}{ROLE_LABEL[r]}</button>
         ))}</div>
-        <p className="hint mt-2">جایگاه راهیار (لایه و محدوده) و مسئول هسته در مرحلهٔ ۲ تنظیم می‌شود.</p></div>
+        <p className="hint mt-2">جایگاه راهیار (لایه و محدوده) از «ساختار راهیاری» و امام محله از «مساجد» تعیین می‌شود.</p></div>
+      {canEdit && (roles.includes('HQ_ADMIN') || roles.includes('HQ_OPERATOR')) && <button className="btn btn-ghost btn-sm w-fit" onClick={() => call(api(`/admin/security/users/${u.id}/mfa-reset`, { method: 'POST' }), 'رمز دوم بازنشانی شد؛ در ورود بعدی دوباره راه می‌اندازد')}>بازنشانی رمز دوم (گوشی گم شده)</button>}
       {canEdit && <button className={`btn btn-sm w-fit ${u.isActive ? 'btn-ghost text-rose' : 'btn-secondary'}`} onClick={() => call(api(`/admin/users/${u.id}`, { method: 'PATCH', body: { isActive: !u.isActive } }), u.isActive ? 'حساب غیرفعال شد' : 'حساب فعال شد').then(onDone)}>
         <ShieldOff className="size-4" />{u.isActive ? 'غیرفعال کردن حساب' : 'فعال کردن حساب'}</button>}
     </div>
@@ -224,7 +239,7 @@ export function Grants() {
             ? <div className="field"><label htmlFor="mb">شماره‌ها <span className="font-normal text-muted">(هر خط یا با ویرگول)</span></label><textarea id="mb" className="input ltr tnum" value={f.mobiles} onChange={(e) => setF({ ...f, mobiles: e.target.value })} /></div>
             : <div className="field"><label htmlFor="nt">سازمان</label><select id="nt" className="input" value={f.networkId} onChange={(e) => setF({ ...f, networkId: e.target.value })}><option value="">انتخاب کنید</option>{nets.data?.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}</select></div>}
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="field"><label htmlFor="ex">تا تاریخ <span className="font-normal text-muted">(اختیاری)</span></label><input id="ex" type="date" className="input" value={f.expiresAt} onChange={(e) => setF({ ...f, expiresAt: e.target.value })} /></div>
+            <div className="field"><label htmlFor="ex">تا تاریخ <span className="font-normal text-muted">(اختیاری)</span></label><JalaliInput id="ex" optional withTime={false} label="تا تاریخ" value={f.expiresAt} onChange={(v) => setF({ ...f, expiresAt: v })} /></div>
             <div className="field"><label htmlFor="no">یادداشت</label><input id="no" className="input" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="مثلاً قرارداد برکت ۱۴۰۵" /></div>
           </div>
           {missing.length > 0 && <p className="rounded-xl bg-flame-soft p-3 text-sm text-flame-ink">این شماره‌ها حساب ندارند یا نادرست‌اند: <span dir="ltr" className="tnum">{missing.join('، ')}</span>. پس از ثبت‌نام، دوباره دسترسی بدهید.</p>}

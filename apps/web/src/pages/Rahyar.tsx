@@ -107,8 +107,9 @@ export function RahyarReport() {
   const toast = useToast();
   const q = useQuery({ queryKey: ['rthread', learnerId, lessonId], queryFn: () => api<RThread>(`/rahyar/reports/${learnerId}/${lessonId}`) });
   const [body, setBody] = useState('');
+  const [sample, setSample] = useState(false);
   const m = useMutation({
-    mutationFn: (kind: 'FEEDBACK' | 'REVISE' | 'APPROVE') => api<{ status: string }>(`/rahyar/reports/${learnerId}/${lessonId}`, { body: { kind, body } }),
+    mutationFn: (kind: 'FEEDBACK' | 'REVISE' | 'APPROVE') => api<{ status: string }>(`/rahyar/reports/${learnerId}/${lessonId}`, { body: { kind, body, proposeSample: kind === 'APPROVE' && sample } }),
     onSuccess: (_r, kind) => { setBody(''); qc.invalidateQueries({ queryKey: ['rthread', learnerId, lessonId] }); qc.invalidateQueries({ queryKey: ['rahyar-reports'] }); qc.invalidateQueries({ queryKey: ['rahyar-me'] }); toast(kind === 'APPROVE' ? 'تأیید شد' : kind === 'REVISE' ? 'برای اصلاح برگشت' : 'بازخورد فرستاده شد'); },
     onError: (e) => toast((e as Error).message, 'err'),
   });
@@ -138,6 +139,8 @@ export function RahyarReport() {
             <button className="btn btn-secondary" disabled={!body.trim() || m.isPending} onClick={() => m.mutate('FEEDBACK')}>فقط بازخورد</button>
             <button className="btn btn-ghost text-flame-ink" disabled={!body.trim() || m.isPending} onClick={() => m.mutate('REVISE')}>برگرداندن برای اصلاح</button>
           </div>
+          <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1 size-4 accent-[var(--leaf)]" checked={sample} onChange={(e) => setSample(e.target.checked)} /><span>با تأیید، پیشنهاد بده این گزارش «نمونه» شود <span className="text-muted">(فقط با اجازهٔ خود کنشگر و تأیید ستاد منتشر می‌شود)</span></span></label>
+          <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1 size-4 accent-[var(--leaf)]" checked={sample} onChange={(e) => setSample(e.target.checked)} /><span>با تأیید، پیشنهاد بده این گزارش «نمونه» شود <span className="text-muted">(فقط با اجازهٔ خود کنشگر و تأیید ستاد منتشر می‌شود)</span></span></label>
           <p className="hint">بازخورد کوتاه و مشخص بهتر از تأیید خالی است. «برگرداندن» یعنی کنشگر گزارش را کامل می‌کند و دوباره می‌فرستد.</p>
         </div>
       )}

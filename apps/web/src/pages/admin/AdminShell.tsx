@@ -1,6 +1,7 @@
-import { Award, BookOpen, CalendarDays, Compass, House, KeyRound, LayoutDashboard, Landmark, Route, ScrollText, Users } from 'lucide-react';
+import { Award, BookOpen, BookOpenCheck, CalendarDays, Compass, House, KeyRound, LayoutDashboard, Landmark, LifeBuoy, Megaphone, Route, ScrollText, ShieldCheck, Users } from 'lucide-react';
 import { Link, NavLink, Outlet } from 'react-router';
 import { Brand } from '../../components/Shell';
+import { MfaGate } from './MfaGate';
 import { useAuth } from '../../lib/auth';
 import { ROLE_LABEL } from '../../lib/fa';
 
@@ -14,7 +15,11 @@ const SECS = [
   { to: '/admin/grants', label: 'دسترسی ویژه', icon: KeyRound },
   { to: '/admin/certificates', label: 'گواهی‌ها', icon: Award },
   { to: '/admin/mosques', label: 'مساجد', icon: Landmark },
+  { to: '/admin/support', label: 'پشتیبانی', icon: LifeBuoy },
+  { to: '/admin/broadcasts', label: 'پیام گروهی', icon: Megaphone },
+  { to: '/admin/samples', label: 'گزارش‌های نمونه', icon: BookOpenCheck },
   { to: '/admin/audit', label: 'گزارش تغییرات', icon: ScrollText, admin: true },
+  { to: '/admin/security', label: 'گزارش دسترسی', icon: ShieldCheck, admin: true },
 ];
 
 export default function AdminShell() {
@@ -22,16 +27,16 @@ export default function AdminShell() {
   const secs = SECS.filter((s) => !s.admin || has('HQ_ADMIN'));
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[240px_minmax(0,1fr)]">
-      <aside className="sticky top-0 z-20 border-b border-line bg-card md:h-dvh md:border-b-0 md:border-e" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+      <aside className="sticky top-0 z-20 border-b border-line bg-card md:flex md:h-dvh md:flex-col md:overflow-y-auto md:border-b-0 md:border-e" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div className="flex items-center justify-between gap-3 p-4 md:block"><Brand /><span className="text-xs font-bold text-muted md:mt-2 md:block">پنل ستاد</span></div>
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:grid md:overflow-visible md:pb-0" aria-label="بخش‌های پنل">
+        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:grid md:gap-0.5 md:overflow-visible md:pb-2" aria-label="بخش‌های پنل">
           {secs.map((s) => (
             <NavLink key={s.to} to={s.to} end={s.end} className={({ isActive }) => `flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold no-underline ${isActive ? 'bg-leaf-soft text-leaf-ink' : 'text-body hover:bg-sunken'}`}>
               <s.icon className="size-[18px]" />{s.label}
             </NavLink>
           ))}
         </nav>
-        <div className="hidden p-4 md:absolute md:inset-x-0 md:bottom-0 md:block">
+        <div className="hidden p-4 md:mt-auto md:block">
           <Link to="/" className="btn btn-ghost btn-sm mb-3 w-full justify-start"><House className="size-4" />نمای کنشگر</Link>
           <div className="flex items-center gap-2.5 rounded-xl bg-sunken p-2.5">
             <span className="grid size-9 place-items-center rounded-full bg-leaf-soft font-extrabold text-leaf-ink">{me?.firstName[0]}</span>
@@ -39,7 +44,7 @@ export default function AdminShell() {
           </div>
         </div>
       </aside>
-      <main className="min-w-0 px-4 py-6 md:px-8 md:py-8"><div className="mx-auto max-w-6xl"><Outlet /></div></main>
+      <main className="min-w-0 px-4 py-6 md:px-8 md:py-8"><div className="mx-auto max-w-6xl"><MfaGate><Outlet /></MfaGate></div></main>
     </div>
   );
 }

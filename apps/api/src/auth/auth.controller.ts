@@ -4,6 +4,8 @@ import { IsIn, IsOptional, IsString, Length, MaxLength } from 'class-validator';
 import { and, eq } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import { config } from '../config';
+import { dec, enc } from '../common/crypto';
+import { newSecret, otpauthUri, verifyTotp } from '../common/totp';
 import { AuthUser, CurrentUser, Public } from '../common/auth.decorators';
 import { ACCESS_COOKIE } from '../common/auth.guard';
 import { normalizeMobile, toEnDigits } from '../common/mobile';
@@ -94,7 +96,38 @@ export class AuthController {
 
   @Get('me')
   async me(@CurrentUser() u: AuthUser) {
-    return this.profile(u.id);
+    return { ...(await this.profile(u.id)), mfaPending: !!u.mfaPending };
+  }
+
+  // ───────── رمز دوم کارکنان ستاد (۱۳.۴) ─────────
+
+  private async staffUser(u: AuthUser) {
+    const roles = await this.auth.rolesOf(u.id);
+    if (!roles.some((r) => r === 'HQ_ADMIN' || r === 'HQ_OPERATOR')) throw new BadRequestException({ code: 'not_staff', message: 'رمز دوم فقط برای کارکنان ستاد است' });
+    const me = await this.db.query.users.findFirst({ where: eq(users.id, u.id) });
+    return me!;
+  }
+
+  /** ساختن کلید تازه (فقط اگر هنوز فعال نشده) */
+  @Post('mfa/setup') @HttpCode(200)
+  async mfaSetup(@CurrentUser() u: AuthUser) {
+    const me = await this.staffUser(u);
+    if (me.totpEnabledAt) throw new BadRequestException({ code: 'mfa_enabled', message: 'رمز دوم پیش‌تر فعال شده است' });
+    const secret = newSecret();
+    await this.db.update(users).set({ totpSecret: enc(secret) }).where(eq(users.id, u.id));
+    return { secret, uri: otpauthUri(secret, `${me.firstName} ${me.lastName}`) };
+  }
+
+  /** فعال‌سازی یا تأیید رمز دوم؛ نشست را با اختیار ستادی دوباره صادر می‌کند */
+  @Post('mfa/verify') @HttpCode(200) @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async mfaVerify(@CurrentUser() u: AuthUser, @Body() d: { code?: string }, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const me = await this.staffUser(u);
+    const secret = dec(me.totpSecret);
+    if (!secret) throw new BadRequestException({ code: 'mfa_not_setup', message: 'اول رمز دوم را راه بیندازید' });
+    if (!verifyTotp(secret, toEnDigits(String(d.code ?? '')))) throw new BadRequestException({ code: 'mfa_wrong', message: 'کد درست نیست؛ کد تازهٔ برنامه را وارد کنید' });
+    if (!me.totpEnabledAt) await this.db.update(users).set({ totpEnabledAt: new Date() }).where(eq(users.id, u.id));
+    this.setCookies(res, await this.auth.upgradeMfa(req.cookies?.[REFRESH_COOKIE] ?? '', req.headers['user-agent']));
+    return { ok: true };
   }
 
   @Patch('me')
@@ -108,7 +141,7 @@ export class AuthController {
     if (dto.nationalId !== undefined) {
       const n = toEnDigits(dto.nationalId);
       if (!/^\d{10}$/.test(n)) throw new BadRequestException({ code: 'bad_national_id', message: 'کد ملی ۱۰ رقم است' });
-      patch.nationalId = n;
+      patch.nationalId = enc(n);
     }
     if (Object.keys(patch).length) await this.db.update(users).set(patch).where(eq(users.id, u.id));
     return this.profile(u.id);
@@ -127,8 +160,8 @@ export class AuthController {
     const orgs = await this.db.select({ id: networks.id, name: networks.name }).from(roleGrants).innerJoin(networks, eq(networks.id, roleGrants.networkId))
       .where(and(eq(roleGrants.userId, userId), eq(roleGrants.role, 'ORG_ADMIN')));
     return {
-      imamOf, orgs, allowRahyarMessages: u.allowRahyarMessages,
-      id: u.id, mobile: u.mobile, firstName: u.firstName, lastName: u.lastName, gender: u.gender,
+      imamOf, orgs, allowRahyarMessages: u.allowRahyarMessages, notifyMessenger: u.notifyMessenger, mfaEnrolled: !!u.totpEnabledAt,
+      id: u.id, mobile: dec(u.mobileEnc) ?? '', firstName: u.firstName, lastName: u.lastName, gender: u.gender,
       hasNationalId: !!u.nationalId, county, mosque, nearMosque: u.nearMosque, roles,
       cores: coreRows.map((c) => ({ id: c.id, name: c.name, isLeader: c.leaderId === userId })),
       ssoLinked: !!u.coreSsoId,

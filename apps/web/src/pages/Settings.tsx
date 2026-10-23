@@ -16,6 +16,36 @@ export function applyTheme(t: Theme) {
 }
 export const savedTheme = (): Theme => { try { return (localStorage.getItem('mh-theme') as Theme) || 'system'; } catch { return 'system'; } };
 
+function MessengerSection() {
+  const { me, setMe } = useAuth();
+  const toast = useToast();
+  const q = useQuery({ queryKey: ['messenger'], queryFn: () => api<{ bale: { available: boolean; linked: boolean; botUrl: string | null; botName: string | null }; eitaa: { available: boolean } }>('/me/messenger') });
+  const [code, setCode] = useState<string | null>(null);
+  const getCode = async () => { try { setCode((await api<{ code: string }>('/me/messenger/bale/code', { method: 'POST' })).code); } catch (e) { toast((e as Error).message, 'err'); } };
+  const unlink = async () => { await api('/me/messenger/bale', { method: 'DELETE' }); q.refetch(); toast('اتصال بله قطع شد'); };
+  const b = q.data?.bale;
+  // پس از گرفتن کد، هر چند ثانیه وضعیت را نگاه می‌کنیم تا اتصال را نشان دهیم
+  useEffect(() => { if (!code || b?.linked) return; const t = setInterval(() => q.refetch(), 4000); return () => clearInterval(t); }, [code, b?.linked]); // eslint-disable-line
+  return (
+    <section className="card grid gap-3 p-6">
+      <h2 className="text-lg font-extrabold">پیام‌رسان</h2>
+      <p className="text-sm text-muted">یادآوری برنامه‌ها، پاسخ راهیار و خبرهای هسته را در بله هم بگیرید. شمارهٔ همراه شما به بله فرستاده نمی‌شود.</p>
+      {!b ? null : !b.available ? <p className="hint">بات بله مدرسه هنوز راه نیفتاده است.</p> : b.linked ? (
+        <div className="flex flex-wrap items-center gap-3"><span className="chip chip-leaf">بله وصل است</span>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="size-4 accent-[var(--leaf)]" checked={me!.notifyMessenger} onChange={async (e) => { const v = e.target.checked; await api('/me/messenger/prefs', { body: { notifyMessenger: v } }); setMe({ ...me!, notifyMessenger: v }); }} />اعلان‌ها در بله هم بیاید</label>
+          <button className="btn btn-ghost btn-sm text-rose" onClick={unlink}>قطع اتصال</button></div>
+      ) : code ? (
+        <ol className="grid gap-2 text-sm text-body">
+          <li>۱. بات مدرسه را در بله باز کنید{b.botUrl ? <>: <a href={b.botUrl} target="_blank" rel="noopener" className="font-bold text-leaf-ink" dir="ltr">@{b.botName}</a></> : ''}</li>
+          <li>۲. این کد را برایش بفرستید: <b dir="ltr" className="tnum rounded-lg bg-sunken px-2 py-1 text-lg tracking-[.2em] text-ink">{code}</b></li>
+          <li className="text-muted">کد ۱۵ دقیقه اعتبار دارد. پس از فرستادن، همین‌جا «وصل است» نشان داده می‌شود.</li>
+        </ol>
+      ) : <button className="btn btn-secondary w-fit" onClick={getCode}>وصل کردن بله</button>}
+      <p className="hint">ایتا: وقتی رابط رسمی ارسال پیام ایتا در دسترس باشد اضافه می‌شود.</p>
+    </section>
+  );
+}
+
 export default function Settings() {
   const { me, setMe, logout } = useAuth();
   const nav = useNavigate();
@@ -71,6 +101,8 @@ export default function Settings() {
         {me!.cores.length > 0 && <div><b className="block text-ink">هسته‌ها</b><div className="mt-1 flex flex-wrap gap-2">{me!.cores.map((c) => <span key={c.id} className="chip">{c.name}{c.isLeader ? ' · مسئول' : ''}</span>)}</div></div>}
         <div className="flex flex-wrap items-center justify-between gap-3"><div><b className="block text-ink">ورود با سامانهٔ پایه</b><span className="text-sm text-muted">{me!.ssoLinked ? 'حساب شما وصل است' : 'به‌زودی؛ هنوز راه نیفتاده'}</span></div><KeyRound className="size-5 text-muted" /></div>
       </section>
+
+      <MessengerSection />
 
       <section className="card grid gap-3 p-6">
         <h2 className="text-lg font-extrabold">پیام راهیار</h2>

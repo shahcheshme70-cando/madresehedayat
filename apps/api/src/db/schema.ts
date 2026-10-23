@@ -17,7 +17,9 @@ export const gender = pgEnum('gender', ['MALE', 'FEMALE']);
 
 export const users = pgTable('users', {
   id: id(),
+  /** نمایهٔ کور شماره (HMAC) برای جست‌وجو؛ خود شماره رمزگذاری‌شده در mobileEnc است (۱۳.۲) */
   mobile: text('mobile').notNull().unique(),
+  mobileEnc: text('mobile_enc'),
   firstName: text('first_name').notNull(),
   lastName: text('last_name').notNull(),
   gender: gender('gender'),
@@ -29,6 +31,9 @@ export const users = pgTable('users', {
   isActive: boolean('is_active').notNull().default(true),
   deleteRequestedAt: timestamp('delete_requested_at', { withTimezone: true }),
   allowRahyarMessages: boolean('allow_rahyar_messages').notNull().default(true), // پیام مستقیم راهیار (۳.۶)
+  notifyMessenger: boolean('notify_messenger').notNull().default(true), // اعلان‌ها در بله هم برسد
+  totpSecret: text('totp_secret'), // رمز دوم کارکنان (رمزگذاری‌شده)
+  totpEnabledAt: timestamp('totp_enabled_at', { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -51,6 +56,7 @@ export const sessions = pgTable('sessions', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  mfaAt: timestamp('mfa_at', { withTimezone: true }), // رمز دوم کارکنان در این نشست تأیید شده
   createdAt: createdAt(),
 }, (t) => [index('sessions_user_idx').on(t.userId)]);
 
@@ -181,8 +187,19 @@ export const paths = pgTable('paths', {
   icon: text('icon').notNull().default('route'),
   color: text('color').notNull().default('green'),
   published: boolean('published').notNull().default(false),
+  quiz: jsonb('quiz'), // آزمون جامع مسیر: { questions: [...] } مثل درس آزمون
+  passScore: integer('pass_score').notNull().default(60),
   createdAt: createdAt(),
 });
+
+export const pathAttempts = pgTable('path_attempts', {
+  id: id(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  pathId: text('path_id').notNull().references(() => paths.id, { onDelete: 'cascade' }),
+  score: integer('score').notNull(),
+  passed: boolean('passed').notNull(),
+  at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('path_attempt_idx').on(t.userId, t.pathId)]);
 
 export const pathItems = pgTable('path_items', {
   pathId: text('path_id').notNull().references(() => paths.id, { onDelete: 'cascade' }),
@@ -224,13 +241,14 @@ export const certificates = pgTable('certificates', {
   id: id(),
   code: text('code').notNull().unique(),
   userId: text('user_id').notNull().references(() => users.id),
-  courseId: text('course_id').notNull().references(() => courses.id),
+  courseId: text('course_id').references(() => courses.id), // گواهی دوره
+  pathId: text('path_id').references(() => paths.id), // یا گواهی مسیر
   holderName: text('holder_name').notNull(),
   courseTitle: text('course_title').notNull(),
   score: integer('score'),
   issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
-}, (t) => [uniqueIndex('cert_user_course_uq').on(t.userId, t.courseId)]);
+}, (t) => [uniqueIndex('cert_user_course_uq').on(t.userId, t.courseId), uniqueIndex('cert_user_path_uq').on(t.userId, t.pathId)]);
 
 // ───────────── دسترسی ویژه ─────────────
 export const accessGrants = pgTable('access_grants', {
@@ -433,3 +451,81 @@ export const directMessages = pgTable('direct_messages', {
   readByRahyarAt: timestamp('read_by_rahyar_at', { withTimezone: true }),
   createdAt: createdAt(),
 }, (t) => [index('dm_learner_idx').on(t.learnerId, t.createdAt)]);
+
+
+// ═══════════════════════ مرحلهٔ ۳ — گام ۱ ═══════════════════════
+
+/** اتصال حساب به پیام‌رسان‌ها (بله؛ ایتا وقتی رابط رسمی‌اش آماده شود) */
+export const messengerLinks = pgTable('messenger_links', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull(), // BALE | EITAA
+  chatId: text('chat_id').notNull(),
+  linkedAt: timestamp('linked_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.userId, t.provider] }), uniqueIndex('messenger_chat_uq').on(t.provider, t.chatId)]);
+
+export const messengerCodes = pgTable('messenger_codes', {
+  code: text('code').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
+/** تنظیمات کوچک سامانه (مثلاً جای خواندن به‌روزرسانی‌های بله) */
+export const kv = pgTable('kv', { key: text('key').primaryKey(), value: text('value').notNull() });
+
+/** پیام گروهی (۶.۴) */
+export const broadcasts = pgTable('broadcasts', {
+  id: id(),
+  senderId: text('sender_id').notNull().references(() => users.id),
+  audience: jsonb('audience').notNull(), // { kind, ids?, label }
+  title: text('title').notNull(),
+  body: text('body'),
+  link: text('link'),
+  recipientCount: integer('recipient_count').notNull(),
+  status: text('status').notNull(), // PENDING | SENT | REJECTED
+  reviewedById: text('reviewed_by_id').references(() => users.id),
+  createdAt: createdAt(),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+});
+
+/** پشتیبانی (۶.۳) */
+export const tickets = pgTable('tickets', {
+  id: id(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  category: text('category').notNull(), // LOGIN | COURSE | TECH | OTHER
+  subject: text('subject').notNull(),
+  status: text('status').notNull().default('OPEN'), // OPEN | ANSWERED | CLOSED
+  assigneeId: text('assignee_id').references(() => users.id),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index('ticket_status_idx').on(t.status, t.updatedAt)]);
+
+export const ticketMessages = pgTable('ticket_messages', {
+  id: id(),
+  ticketId: text('ticket_id').notNull().references(() => tickets.id, { onDelete: 'cascade' }),
+  authorId: text('author_id').notNull().references(() => users.id),
+  body: text('body').notNull(), // رمزگذاری‌شده
+  createdAt: createdAt(),
+});
+
+/** گزارش نمونه (۳.۵): پیشنهاد راهیار ← اجازهٔ کنشگر ← تأیید ستاد */
+export const missionSamples = pgTable('mission_samples', {
+  learnerId: text('learner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  lessonId: text('lesson_id').notNull().references(() => lessons.id, { onDelete: 'cascade' }),
+  proposedById: text('proposed_by_id').notNull().references(() => users.id),
+  status: text('status').notNull(), // PROPOSED | CONSENTED | PUBLISHED | DECLINED
+  named: boolean('named'),
+  text: text('text'), // فقط پس از اجازهٔ کنشگر کپی می‌شود
+  authorLabel: text('author_label'),
+  createdAt: createdAt(),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+}, (t) => [primaryKey({ columns: [t.learnerId, t.lessonId] })]);
+
+/** دیدن دادهٔ شخصی به دست کارکنان و راهیاران (۱۳.۳)؛ ۱ سال نگه داشته می‌شود */
+export const accessLogs = pgTable('access_logs', {
+  id: id(),
+  actorId: text('actor_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  action: text('action').notNull(),
+  subjectId: text('subject_id'),
+  at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('access_log_at_idx').on(t.at)]);

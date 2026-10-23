@@ -4,9 +4,11 @@ import type { Response } from 'express';
 import { inArray } from 'drizzle-orm';
 import { AuthUser, CurrentUser, Roles } from '../common/auth.decorators';
 import { Db, InjectDb } from '../db/db.module';
+import { AccessLog } from '../security/security';
 import { privateFiles } from '../db/schema';
 import { FileStore } from '../files/files.controller';
 import { MissionsService } from '../rahyar/missions.service';
+import { Messenger } from '../messenger/messenger';
 import { EventInput, EventsService } from './events.service';
 
 class GroupDto { @IsString() coreId: string; @IsArray() @ArrayMaxSize(200) @IsString({ each: true }) userIds: string[]; }
@@ -19,7 +21,7 @@ class NotifyDto { @IsString() @Length(2, 120) title: string; @IsOptional() @IsSt
 
 @Controller()
 export class EventsController {
-  constructor(private readonly svc: EventsService) {}
+  constructor(private readonly svc: EventsService, private readonly access: AccessLog) {}
 
   @Get('events')
   list(@CurrentUser() u: AuthUser, @Query('scope') scope?: string) {
@@ -43,7 +45,7 @@ export class EventsController {
   managed(@CurrentUser() u: AuthUser) { return this.svc.managed(u); }
   @Post('manage/events') @Roles('HQ_ADMIN', 'HQ_OPERATOR', 'RAHYAR', 'INSTRUCTOR')
   create(@CurrentUser() u: AuthUser, @Body() d: EventInput) { return this.svc.create(u, d); }
-  @Get('manage/events/:id') registrants(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.svc.registrants(u, id); }
+  @Get('manage/events/:id') async registrants(@CurrentUser() u: AuthUser, @Param('id') id: string) { const r = await this.svc.registrants(u, id); this.access.write(u.id, 'event.people', null); return r; }
   @Patch('manage/events/:id') update(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() d: EventInput & { notify?: boolean }) { return this.svc.update(u, id, d); }
   @Delete('manage/events/:id') remove(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.svc.remove(u, id); }
   @Post('manage/events/:id/publish') @HttpCode(200) publish(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.svc.publish(u, id); }
@@ -67,7 +69,8 @@ export class EventsController {
 export class Scheduler implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('Scheduler');
   private timers: NodeJS.Timeout[] = [];
-  constructor(private readonly events: EventsService, private readonly missions: MissionsService, private readonly store: FileStore, @InjectDb() private readonly db: Db) {}
+  constructor(private readonly events: EventsService, private readonly missions: MissionsService, private readonly store: FileStore, @InjectDb() private readonly db: Db,
+    private readonly messenger: Messenger, private readonly access: AccessLog) {}
 
   onModuleInit() {
     if (process.env.SCHEDULER === 'off') return;
@@ -75,6 +78,10 @@ export class Scheduler implements OnModuleInit, OnModuleDestroy {
     this.timers.push(setInterval(safe('reminders', () => this.events.sendReminders()), 60_000));
     this.timers.push(setInterval(safe('escalate', () => this.missions.escalate()), 3600_000));
     this.timers.push(setInterval(safe('expire', () => this.expire()), 3600_000));
+    this.timers.push(setInterval(safe('purge', () => this.access.purge()), 24 * 3600_000));
+    // کد اتصال بله؛ اگر بات تنظیم نشده باشد کاری نمی‌کند
+    let polling = false;
+    this.timers.push(setInterval(() => { if (polling || !this.messenger.baleEnabled) return; polling = true; this.messenger.poll().catch((e) => this.log.warn(`بله: ${e?.message ?? e}`)).finally(() => (polling = false)); }, 4000));
     setTimeout(safe('first', async () => { await this.events.sendReminders(); await this.missions.escalate(); await this.expire(); }), 5_000);
   }
   onModuleDestroy() { this.timers.forEach(clearInterval); }

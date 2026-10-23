@@ -64,6 +64,32 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-madrese}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET: madrese
+      DATA_KEY: ${DATA_KEY:?DATA_KEY را در .env بگذارید (openssl rand -base64 32)}
+      STAFF_MFA: ${STAFF_MFA:-on}
+      BALE_BOT_TOKEN: ${BALE_BOT_TOKEN:-}
+      BALE_BOT_USERNAME: ${BALE_BOT_USERNAME:-}
+
+  # پشتیبان روزانهٔ پایگاه داده روی همان سرور (۷ روز آخر). برای خاموش کردن: BACKUP_KEEP_DAYS=0
+  backup:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      KEEP: ${BACKUP_KEEP_DAYS:-7}
+    volumes:
+      - backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        [ "$$KEEP" = "0" ] && echo "پشتیبان‌گیری خاموش است" && exec sleep infinity
+        while true; do
+          f=/backups/madrese-$$(date +%Y%m%d-%H%M).sql.gz
+          pg_dump -h db -U madrese madrese | gzip > "$$f.tmp" && mv "$$f.tmp" "$$f" && echo "پشتیبان: $$f"
+          find /backups -name 'madrese-*.sql.gz' -mtime +$$KEEP -delete
+          sleep 86400
+        done
 
   web:
     build:
@@ -79,5 +105,6 @@ services:
       - "${WEB_PORT:-8080}:80"
 
 volumes:
+  backups:
   db-data:
   files:

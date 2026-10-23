@@ -5,6 +5,8 @@ export type RoleName = 'HQ_ADMIN' | 'HQ_OPERATOR' | 'INSTRUCTOR' | 'RAHYAR' | 'I
 export interface AuthUser {
   id: string;
   roles: RoleName[];
+  /** نقش ستادی دارد ولی رمز دوم این نشست هنوز تأیید نشده؛ نقش‌های ستادی موقتاً برداشته شده‌اند */
+  mfaPending?: boolean;
 }
 
 export const IS_PUBLIC = 'isPublic';

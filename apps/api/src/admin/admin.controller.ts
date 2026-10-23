@@ -1,3 +1,4 @@
+import { AccessLog } from '../security/security';
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import {
@@ -46,6 +47,8 @@ class UpdatePathDto {
   @IsOptional() @IsBoolean() published?: boolean;
   @IsOptional() @IsString() @MaxLength(20) color?: string;
   @IsOptional() @IsString() @MaxLength(40) icon?: string;
+  @IsOptional() @IsObject() quiz?: Record<string, unknown> | null;
+  @IsOptional() @IsInt() @Min(0) @Max(100) passScore?: number;
 }
 class PathCoursesDto { @IsArray() @IsString({ each: true }) courseIds: string[]; }
 class ActiveDto { @IsBoolean() isActive: boolean; }
@@ -64,7 +67,7 @@ class MosqueDto { @IsString() @Length(2, 120) name: string; @IsString() countyId
 @Controller('admin')
 @Roles('HQ_ADMIN', 'HQ_OPERATOR')
 export class AdminController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(private readonly admin: AdminService, private readonly access: AccessLog) {}
 
   @Get('stats') stats() { return this.admin.stats(); }
 
@@ -89,7 +92,7 @@ export class AdminController {
   @Put('paths/:id/courses') pathCourses(@Param('id') id: string, @Body() d: PathCoursesDto) { return this.admin.setPathCourses(id, d.courseIds); }
   @Delete('paths/:id') deletePath(@Param('id') id: string) { return this.admin.deletePath(id); }
 
-  @Get('users') users(@Query('q') q = '', @Query('page') page = '1') { return this.admin.listUsers(q, Number(page) || 1); }
+  @Get('users') users(@CurrentUser() u: AuthUser, @Query('q') q = '', @Query('page') page = '1') { this.access.write(u.id, 'users.list', null); return this.admin.listUsers(q, Number(page) || 1); }
   @Patch('users/:id') @Roles('HQ_ADMIN') setActive(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() d: ActiveDto) { return this.admin.setActive(u.id, id, d.isActive); }
   @Post('users/:id/roles') @HttpCode(200) @Roles('HQ_ADMIN') grantRole(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() d: RoleDto) { return this.admin.grantRole(u.id, id, d.role, d.networkId); }
   @Delete('users/:id/roles/:role') @Roles('HQ_ADMIN') revokeRole(@CurrentUser() u: AuthUser, @Param('id') id: string, @Param('role') role: RoleDto['role']) { return this.admin.revokeRole(u.id, id, role); }

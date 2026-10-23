@@ -1,9 +1,13 @@
-import { BadRequestException, Controller, Get, Injectable, Logger, NotFoundException, OnModuleInit, Param, Post, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Controller, ForbiddenException, Get, Injectable, Logger, NotFoundException, OnModuleInit, Param, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import * as Minio from 'minio';
 import { createId } from '../db/id';
-import { Roles } from '../common/auth.decorators';
+import { AuthUser, CurrentUser, Roles } from '../common/auth.decorators';
+import { Db, InjectDb } from '../db/db.module';
+import { privateFiles } from '../db/schema';
+import { RahyarService } from '../rahyar/rahyar.service';
 
 /** فایل‌ها (صوت، PDF، ویدیوی درس‌های تعاملی) روی MinIO داخل همان سرور نگه‌داری می‌شوند. */
 @Injectable()
@@ -33,7 +37,7 @@ const ALLOWED = /^(audio\/(mpeg|mp4|ogg|webm|x-m4a|aac)|video\/(mp4|webm)|applic
 
 @Controller()
 export class FilesController {
-  constructor(private readonly store: FileStore) {}
+  constructor(private readonly store: FileStore, @InjectDb() private readonly db: Db, private readonly rahyar: RahyarService) {}
 
   @Post('admin/uploads') @Roles('HQ_ADMIN', 'HQ_OPERATOR')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 500 * 1024 * 1024 } }))
@@ -47,16 +51,41 @@ export class FilesController {
     return { key, size: file.size, type: file.mimetype, name: file.originalname };
   }
 
+  /**
+   * عکس مأموریت (دادهٔ قرمز): فقط خود کنشگر، راهیاران بالادستش و ستاد می‌بینند.
+   * عکس اصلی ۱ سال و عکس شاهد ۶ ماه نگه داشته می‌شود و بعد خودکار پاک می‌شود.
+   */
+  @Post('uploads/mission')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
+  async uploadMission(@CurrentUser() u: AuthUser, @Query('kind') kind: string, @UploadedFile() file: { originalname: string; mimetype: string; size: number; buffer: Buffer }) {
+    if (!this.store.ready) throw new BadRequestException({ code: 'storage_off', message: 'ذخیره‌ساز فایل در دسترس نیست' });
+    if (!file) throw new BadRequestException({ code: 'no_file', message: 'فایلی فرستاده نشد' });
+    if (!/^image\/(png|jpeg|webp)$/.test(file.mimetype)) throw new BadRequestException({ code: 'bad_type', message: 'فقط عکس (jpg، png یا webp)' });
+    const main = kind !== 'evidence';
+    const ext = file.mimetype === 'image/png' ? 'png' : file.mimetype === 'image/webp' ? 'webp' : 'jpg';
+    const key = `${createId()}.${ext}`;
+    await this.store.client.putObject(this.store.bucket, key, file.buffer, file.size, { 'Content-Type': file.mimetype });
+    const expiresAt = new Date(Date.now() + (main ? 365 : 182) * 86400_000);
+    await this.db.insert(privateFiles).values({ key, ownerId: u.id, kind: main ? 'MISSION_MAIN' : 'MISSION_EVIDENCE', expiresAt });
+    return { key, expiresAt };
+  }
+
   /** فقط برای کاربرانی که وارد شده‌اند؛ پخش تکه‌ای (Range) برای صوت و ویدیو */
   @Get('files/:key')
-  async get(@Param('key') key: string, @Res() res: Response) {
+  async get(@CurrentUser() u: AuthUser, @Param('key') key: string, @Res() res: Response) {
     if (!/^[a-z0-9]+\.[a-z0-9]{1,5}$/.test(key)) throw new NotFoundException();
+    const priv = await this.db.query.privateFiles.findFirst({ where: eq(privateFiles.key, key) });
+    if (priv) {
+      const ok = priv.ownerId === u.id || u.roles.includes('HQ_ADMIN') || (await this.rahyar.canSeeLearner(u.id, priv.ownerId, u.roles));
+      if (!ok) throw new ForbiddenException({ code: 'forbidden', message: 'این عکس خصوصی است' });
+      if (priv.expiresAt < new Date()) throw new NotFoundException({ code: 'expired', message: 'مهلت نگه‌داری این عکس تمام شده' });
+    }
     try {
       const stat = await this.store.client.statObject(this.store.bucket, key);
       const range = res.req.headers.range;
       res.setHeader('Content-Type', stat.metaData['content-type'] ?? 'application/octet-stream');
       res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Cache-Control', 'private, max-age=86400');
+      res.setHeader('Cache-Control', priv ? 'private, no-store' : 'private, max-age=86400');
       if (range) {
         const m = /bytes=(\d*)-(\d*)/.exec(range);
         const start = m?.[1] ? Number(m[1]) : 0;

@@ -1,14 +1,14 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, NotImplementedException, Patch, Post, Req, Res } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { IsIn, IsOptional, IsString, Length, MaxLength } from 'class-validator';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import { config } from '../config';
 import { AuthUser, CurrentUser, Public } from '../common/auth.decorators';
 import { ACCESS_COOKIE } from '../common/auth.guard';
 import { normalizeMobile, toEnDigits } from '../common/mobile';
 import { Db, InjectDb } from '../db/db.module';
-import { coreMemberships, cores, counties, mosques, provinces, users } from '../db/schema';
+import { coreMemberships, cores, counties, mosques, networks, provinces, roleGrants, users } from '../db/schema';
 import { AuthService } from './auth.service';
 
 const REFRESH_COOKIE = 'mh_rt';
@@ -123,7 +123,11 @@ export class AuthController {
     const mosque = u.mosqueId ? await this.db.query.mosques.findFirst({ where: eq(mosques.id, u.mosqueId), columns: { id: true, name: true } }) : null;
     const coreRows = await this.db.select({ id: cores.id, name: cores.name, leaderId: cores.leaderId })
       .from(coreMemberships).innerJoin(cores, eq(cores.id, coreMemberships.coreId)).where(eq(coreMemberships.userId, userId));
+    const imamOf = await this.db.select({ id: mosques.id, name: mosques.name }).from(mosques).where(eq(mosques.imamId, userId));
+    const orgs = await this.db.select({ id: networks.id, name: networks.name }).from(roleGrants).innerJoin(networks, eq(networks.id, roleGrants.networkId))
+      .where(and(eq(roleGrants.userId, userId), eq(roleGrants.role, 'ORG_ADMIN')));
     return {
+      imamOf, orgs, allowRahyarMessages: u.allowRahyarMessages,
       id: u.id, mobile: u.mobile, firstName: u.firstName, lastName: u.lastName, gender: u.gender,
       hasNationalId: !!u.nationalId, county, mosque, nearMosque: u.nearMosque, roles,
       cores: coreRows.map((c) => ({ id: c.id, name: c.name, isLeader: c.leaderId === userId })),

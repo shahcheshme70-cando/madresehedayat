@@ -4,7 +4,7 @@ import { randomInt } from 'node:crypto';
 import { Db, InjectDb } from '../db/db.module';
 import {
   accessGrants, certificates, coreMemberships, cores, courseDependencies, courses, enrollments, lessonProgress,
-  lessons, modules, paths, pathItems, quizAttempts, roleGrants, users,
+  lessons, modules, networkMembers, paths, pathItems, quizAttempts, roleGrants, users,
 } from '../db/schema';
 import { gradeQuiz, publicContent, QuizContent } from './lesson-content';
 
@@ -25,7 +25,8 @@ export class LearningService {
     const viaCores = await this.db.select({ id: cores.networkId }).from(coreMemberships)
       .innerJoin(cores, eq(cores.id, coreMemberships.coreId)).where(eq(coreMemberships.userId, userId));
     const viaRoles = await this.db.select({ id: roleGrants.networkId }).from(roleGrants).where(eq(roleGrants.userId, userId));
-    return [...new Set([...viaCores, ...viaRoles].map((r) => r.id).filter(Boolean) as string[])];
+    const viaMembers = await this.db.select({ id: networkMembers.networkId }).from(networkMembers).where(eq(networkMembers.userId, userId));
+    return [...new Set([...viaCores, ...viaRoles, ...viaMembers].map((r) => r.id).filter(Boolean) as string[])];
   }
 
   /** دوره‌های محدودی که این کاربر دسترسی ویژه به آن‌ها دارد */
@@ -219,13 +220,9 @@ export class LearningService {
     const { l, c } = await this.lessonWithCourse(lessonId);
     await this.requireEnrolled(userId, c.id);
     if (l.type === 'QUIZ' && body.completed) throw new BadRequestException({ code: 'quiz_needs_attempt', message: 'آزمون با ثبت پاسخ‌ها تکمیل می‌شود' });
-    let completed = !!body.completed;
-    let data = body.data as any;
-    if (l.type === 'MISSION' && completed) {
-      // مأموریت: «با فرستادن» یا «با تأیید راهیار» (قاعدهٔ هر دوره)
-      data = { ...(data ?? {}), status: c.missionRule === 'ON_SUBMIT' ? 'submitted' : 'pending', submittedAt: new Date().toISOString() };
-      if (c.missionRule === 'ON_APPROVAL') completed = false;
-    }
+    const completed = !!body.completed;
+    const data = body.data as any;
+    if (l.type === 'MISSION' && (completed || data !== undefined)) throw new BadRequestException({ code: 'use_mission_submit', message: 'گزارش مأموریت از بخش مأموریت فرستاده می‌شود' });
     const set: Partial<typeof lessonProgress.$inferInsert> = { updatedAt: new Date() };
     if (typeof body.positionSec === 'number') set.positionSec = Math.max(0, Math.floor(body.positionSec));
     if (data !== undefined) set.data = data;

@@ -15,6 +15,13 @@ import { FilesController, FileStore } from './files/files.controller';
 import { GeoController } from './geo/geo.controller';
 import { LearningController } from './learning/learning.controller';
 import { LearningService } from './learning/learning.service';
+import { CoresController } from './cores/cores.controller';
+import { EventsController, Scheduler } from './events/events.controller';
+import { EventsService } from './events/events.service';
+import { Notifier, NotificationsController } from './notifications/notifications';
+import { MissionsService } from './rahyar/missions.service';
+import { RahyarController } from './rahyar/rahyar.controller';
+import { RahyarService } from './rahyar/rahyar.service';
 import { ConsoleSms, KavenegarSms, SmsSender } from './sms/sms';
 
 @Controller('health')
@@ -33,9 +40,11 @@ class HealthController {
     JwtModule.register({ global: true, secret: config.jwtSecret }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
   ],
-  controllers: [HealthController, AuthController, GeoController, LearningController, AdminController, FilesController],
+  controllers: [HealthController, AuthController, GeoController, LearningController, AdminController, FilesController,
+    NotificationsController, RahyarController, CoresController, EventsController],
   providers: [
     AuthService, LearningService, AdminService, FileStore,
+    Notifier, RahyarService, MissionsService, EventsService, Scheduler,
     { provide: SmsSender, useClass: config.smsProvider === 'kavenegar' ? KavenegarSms : ConsoleSms },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },

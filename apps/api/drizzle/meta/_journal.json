@@ -15,6 +15,13 @@
       "when": 1792753565297,
       "tag": "0001_role_grant_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792770016777,
+      "tag": "0002_phase2",
+      "breakpoints": true
     }
   ]
 }

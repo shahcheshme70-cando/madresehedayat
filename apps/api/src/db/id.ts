@@ -12,3 +12,6 @@ export function createId(): string {
   for (const b of bytes) rnd += ALPHA[b % 36];
   return time + rnd;
 }
+
+/** آرایهٔ شناسه به‌صورت یک پارامتر text[] برای `= any(...)` در sql خام (Drizzle آرایه را به چند پارامتر باز می‌کند) */
+export const pgArr = (ids: string[]) => `{${ids.map((x) => `"${String(x).replace(/["\\]/g, '')}"`).join(',')}}`;

@@ -4,7 +4,7 @@ import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
 import { Db, InjectDb } from '../db/db.module';
-import { coreMemberships, cores, otpRequests, roleGrants, sessions, users } from '../db/schema';
+import { coreMemberships, cores, mosques, otpRequests, roleGrants, sessions, users } from '../db/schema';
 import { RoleName } from '../common/auth.decorators';
 import { SmsSender } from '../sms/sms';
 
@@ -94,8 +94,13 @@ export class AuthService {
       nearMosque: input.mosqueId ? null : input.nearMosque?.trim() || null,
     }).returning();
     if (input.inviteCode) {
-      const core = await this.db.query.cores.findFirst({ where: eq(cores.inviteCode, input.inviteCode.trim()) });
+      const code = input.inviteCode.trim().toLowerCase();
+      const core = await this.db.query.cores.findFirst({ where: eq(cores.inviteCode, code) });
       if (core) await this.db.insert(coreMemberships).values({ coreId: core.id, userId: u.id }).onConflictDoNothing();
+      else {
+        const m = await this.db.query.mosques.findFirst({ where: eq(mosques.inviteCode, code) });
+        if (m) await this.db.update(users).set({ mosqueId: m.id, nearMosque: null }).where(eq(users.id, u.id));
+      }
     }
     return u.id;
   }

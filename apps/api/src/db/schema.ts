@@ -28,6 +28,7 @@ export const users = pgTable('users', {
   coreSsoId: text('core_sso_id').unique(), // شناسه در سامانهٔ پایه اگر حساب وصل شده
   isActive: boolean('is_active').notNull().default(true),
   deleteRequestedAt: timestamp('delete_requested_at', { withTimezone: true }),
+  allowRahyarMessages: boolean('allow_rahyar_messages').notNull().default(true), // پیام مستقیم راهیار (۳.۶)
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -83,6 +84,7 @@ export const mosques = pgTable('mosques', {
   address: text('address'),
   verified: boolean('verified').notNull().default(false),
   imamId: text('imam_id'),
+  inviteCode: text('invite_code').unique(), // پیوند دعوت امام محله برای اعضای آزاد
   createdAt: createdAt(),
 });
 
@@ -291,3 +293,143 @@ export const certificatesRelations = relations(certificates, ({ one }) => ({
   user: one(users, { fields: [certificates.userId], references: [users.id] }),
   course: one(courses, { fields: [certificates.courseId], references: [courses.id] }),
 }));
+
+
+// ═══════════════════════ مرحلهٔ ۲ ═══════════════════════
+
+// ───────────── شبکهٔ راهیاری ─────────────
+// دو درخت جدا (برادران و بانور). «جایگاه» جدا از «فرد» است تا جابه‌جایی افراد سوابق را به‌هم نریزد.
+export const rahyarLayer = pgEnum('rahyar_layer', ['DEPUTY', 'MANAGER', 'REGIONAL', 'PROVINCIAL', 'COUNTY']);
+
+export const rahyarPositions = pgTable('rahyar_positions', {
+  id: id(),
+  gender: gender('gender').notNull(), // درخت برادران یا بانور
+  layer: rahyarLayer('layer').notNull(),
+  title: text('title').notNull(),
+  parentId: text('parent_id'),
+  holderId: text('holder_id').references(() => users.id), // نفری که الان این جایگاه را دارد
+  provinceId: text('province_id').references(() => provinces.id), // برای PROVINCIAL
+  countyId: text('county_id').references(() => counties.id), // برای COUNTY
+  createdAt: createdAt(),
+}, (t) => [index('rahyar_parent_idx').on(t.parentId), index('rahyar_holder_idx').on(t.holderId)]);
+
+/** استان‌های هر منطقه (جایگاه REGIONAL) — معاون هر درخت تعیین می‌کند */
+export const regionProvinces = pgTable('region_provinces', {
+  regionId: text('region_id').notNull().references(() => rahyarPositions.id, { onDelete: 'cascade' }),
+  provinceId: text('province_id').notNull().references(() => provinces.id),
+}, (t) => [primaryKey({ columns: [t.regionId, t.provinceId] })]);
+
+/** سپردن کنشگر به یک راهیار شهرستانی مشخص (وقتی شهرستان چند راهیار دارد) — با راهیار استانی */
+export const rahyarAssignments = pgTable('rahyar_assignments', {
+  userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  positionId: text('position_id').notNull().references(() => rahyarPositions.id, { onDelete: 'cascade' }),
+  assignedById: text('assigned_by_id').references(() => users.id),
+  createdAt: createdAt(),
+});
+
+// ───────────── گزارش مأموریت ─────────────
+export const missionMessageKind = pgEnum('mission_message_kind', ['REPORT', 'FEEDBACK', 'REVISE', 'APPROVE', 'REPLY']);
+
+/** رشتهٔ گفت‌وگوی هر مأموریت: گزارش، بازخورد، درخواست اصلاح، تأیید */
+export const missionMessages = pgTable('mission_messages', {
+  id: id(),
+  learnerId: text('learner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  lessonId: text('lesson_id').notNull().references(() => lessons.id, { onDelete: 'cascade' }),
+  authorId: text('author_id').notNull().references(() => users.id),
+  kind: missionMessageKind('kind').notNull(),
+  body: text('body').notNull(),
+  createdAt: createdAt(),
+}, (t) => [index('mission_msg_idx').on(t.learnerId, t.lessonId)]);
+
+/** عکس‌های مأموریت: اصلی ۱ سال، شاهد ۶ ماه (۳.۴) */
+export const privateFiles = pgTable('private_files', {
+  key: text('key').primaryKey(),
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(), // MISSION_MAIN | MISSION_EVIDENCE
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
+});
+
+// ───────────── اعضای سازمان مشترک ─────────────
+export const networkMembers = pgTable('network_members', {
+  networkId: text('network_id').notNull().references(() => networks.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: createdAt(),
+}, (t) => [primaryKey({ columns: [t.networkId, t.userId] })]);
+
+// ───────────── برنامه‌ها ─────────────
+export const eventKind = pgEnum('event_kind', ['ONLINE', 'IN_PERSON']);
+export const eventStatus = pgEnum('event_status', ['DRAFT', 'PUBLISHED', 'CANCELLED']);
+export const registrationStatus = pgEnum('registration_status', ['REGISTERED', 'WAITLIST', 'PENDING', 'REJECTED', 'CANCELLED']);
+
+export const events = pgTable('events', {
+  id: id(),
+  title: text('title').notNull(),
+  description: text('description'),
+  agenda: text('agenda'),
+  kind: eventKind('kind').notNull(),
+  startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+  endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
+  location: text('location'), // نشانی برنامهٔ حضوری
+  mapUrl: text('map_url'), // پیوند نشان یا بلد
+  onlineUrl: text('online_url'), // پیوند کلاس آنلاین
+  bring: text('bring'), // چه چیزی همراه بیاورید
+  hostName: text('host_name'),
+  capacity: integer('capacity'), // خالی = بی‌سقف
+  waitlist: boolean('waitlist').notNull().default(true),
+  requiresApproval: boolean('requires_approval').notNull().default(false),
+  registrationDeadline: timestamp('registration_deadline', { withTimezone: true }),
+  audienceGender: gender('audience_gender'),
+  audienceProvinceId: text('audience_province_id').references(() => provinces.id),
+  audienceCountyId: text('audience_county_id').references(() => counties.id),
+  courseId: text('course_id').references(() => courses.id), // برنامه‌ای که بخشی از یک دوره است
+  status: eventStatus('status').notNull().default('DRAFT'),
+  cancelReason: text('cancel_reason'),
+  createdById: text('created_by_id').notNull().references(() => users.id),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index('events_starts_idx').on(t.startsAt)]);
+
+export const registrations = pgTable('registrations', {
+  eventId: text('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  status: registrationStatus('status').notNull(),
+  checkInCode: text('check_in_code').notNull(), // کد کارت ورود (QR)
+  registeredById: text('registered_by_id').references(() => users.id), // ثبت‌نام گروهی مسئول هسته
+  lateCancel: boolean('late_cancel').notNull().default(false),
+  attendedAt: timestamp('attended_at', { withTimezone: true }),
+  attendanceMethod: text('attendance_method'), // QR | MANUAL | ONLINE
+  feedback: jsonb('feedback'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [primaryKey({ columns: [t.eventId, t.userId] }), uniqueIndex('reg_checkin_uq').on(t.eventId, t.checkInCode)]);
+
+/** یادآوری‌هایی که فرستاده شده (تا تکراری نشود) */
+export const eventReminders = pgTable('event_reminders', {
+  eventId: text('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(), // DAY | SOON
+  sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.eventId, t.kind] })]);
+
+// ───────────── اعلان و پیام ─────────────
+export const notifications = pgTable('notifications', {
+  id: id(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  title: text('title').notNull(),
+  body: text('body'),
+  link: text('link'),
+  readAt: timestamp('read_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index('notif_user_idx').on(t.userId, t.createdAt)]);
+
+/** گفت‌وگوی کنشگر با راهیارانش (هر کنشگر یک رشته) */
+export const directMessages = pgTable('direct_messages', {
+  id: id(),
+  learnerId: text('learner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  authorId: text('author_id').notNull().references(() => users.id),
+  body: text('body').notNull(),
+  readByLearnerAt: timestamp('read_by_learner_at', { withTimezone: true }),
+  readByRahyarAt: timestamp('read_by_rahyar_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index('dm_learner_idx').on(t.learnerId, t.createdAt)]);

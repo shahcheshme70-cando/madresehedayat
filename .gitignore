@@ -7,3 +7,4 @@ apps/web/public/fonts/*.woff*
 coverage
 .DS_Store
 dist-demo
+*.tsbuildinfo

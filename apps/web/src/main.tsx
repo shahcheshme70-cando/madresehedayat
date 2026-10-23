@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, Navigate, RouterProvider, useLocation } from 'react-router';
+import { createBrowserRouter, createHashRouter, Navigate, RouterProvider, useLocation } from 'react-router';
 import { Shell } from './components/Shell';
 import { Spinner, ToastProvider } from './components/ui';
 import { ApiError } from './lib/api';
@@ -20,8 +20,9 @@ import Me from './pages/Me';
 import { NotFound, RouteError, TermsPage, VerifyPage } from './pages/Public';
 import Settings, { applyTheme, savedTheme } from './pages/Settings';
 import './styles/app.css';
+import { DemoBar } from './demo/DemoBar';
 
-applyTheme(savedTheme());
+if (savedTheme() !== 'system') applyTheme(savedTheme());
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -41,7 +42,7 @@ function RequireStaff({ children }: { children: ReactNode }) {
   return isStaff ? <>{children}</> : <NotFound />;
 }
 
-const router = createBrowserRouter([
+const router = (import.meta.env.VITE_DEMO ? createHashRouter : createBrowserRouter)([
   { path: '/login', element: <Login /> },
   { path: '/verify', element: <VerifyPage /> },
   { path: '/verify/:code', element: <VerifyPage /> },
@@ -86,6 +87,7 @@ createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <ToastProvider>
           <RouterProvider router={router} />
+          {import.meta.env.VITE_DEMO && <DemoBar />}
         </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>

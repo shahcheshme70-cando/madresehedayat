@@ -10,6 +10,11 @@ async function refresh() {
 }
 
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; form?: FormData; retry?: boolean } = {}): Promise<T> {
+  if (import.meta.env.VITE_DEMO) {
+    const { demoApi } = await import('../demo/server');
+    try { return await demoApi(path, opts.method ?? (opts.body || opts.form ? 'POST' : 'GET'), opts.body); }
+    catch (e: any) { throw new ApiError(e.status ?? 500, e.code ?? 'error', e.message, e.data); }
+  }
   const init: RequestInit = { method: opts.method ?? (opts.body || opts.form ? 'POST' : 'GET'), credentials: 'include', headers: {} };
   if (opts.form) init.body = opts.form;
   else if (opts.body !== undefined) { init.body = JSON.stringify(opts.body); (init.headers as Record<string, string>)['content-type'] = 'application/json'; }

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { CourseCard } from '../components/CourseCard';
 import { Empty, Spinner, useToast } from '../components/ui';
+import { Badges } from './Campaigns';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { fa, jDate } from '../lib/fa';
@@ -44,6 +45,7 @@ export default function Me() {
         </div>
       </header>
 
+      <Badges />
       <section>
         <h2 className="mb-4 text-lg font-extrabold">گواهی‌ها</h2>
         {certs.data?.length ? (

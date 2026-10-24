@@ -29,6 +29,7 @@ import { AdminBroadcasts, BroadcastPage } from './pages/Broadcast';
 import { AccessLogPage, Samples, ToolsAdmin } from './pages/admin/Extra';
 import { AdminBusiness } from './pages/Business';
 import FeedbackAdmin from './pages/admin/Feedback';
+import CampaignList, { CampaignEditor, CampaignPage, ManageCampaign, ManageCampaigns } from './pages/Campaigns';
 import Toolbox, { BoardPage, PublicBoard, ToolPage } from './pages/Tools';
 import { PathExam } from './pages/Learn';
 import './styles/app.css';
@@ -79,6 +80,12 @@ const router = (import.meta.env.VITE_DEMO ? createHashRouter : createBrowserRout
       { path: '/me', element: <Me /> },
       { path: '/settings', element: <Settings /> },
       { path: '/events', element: <Events /> },
+      { path: '/campaigns', element: <CampaignList /> },
+      { path: '/campaigns/:id', element: <CampaignPage /> },
+      { path: '/manage/campaigns', element: <ManageCampaigns /> },
+      { path: '/manage/campaigns/new', element: <CampaignEditor /> },
+      { path: '/manage/campaigns/:id', element: <ManageCampaign /> },
+      { path: '/manage/campaigns/:id/edit', element: <CampaignEditor /> },
       { path: '/events/:id', element: <EventPage /> },
       { path: '/notifications', element: <Notifications /> },
       { path: '/messages', element: <Messages /> },
@@ -129,6 +136,10 @@ const router = (import.meta.env.VITE_DEMO ? createHashRouter : createBrowserRout
       { path: 'samples', element: <Samples /> },
       { path: 'tools', element: <ToolsAdmin /> },
       { path: 'security', element: <AccessLogPage /> },
+      { path: 'campaigns', element: <ManageCampaigns /> },
+      { path: 'campaigns/new', element: <CampaignEditor /> },
+      { path: 'campaigns/:id', element: <ManageCampaign /> },
+      { path: 'campaigns/:id/edit', element: <CampaignEditor /> },
       { path: 'events', element: <ManageEventList /> },
       { path: 'events/new', element: <EventEditor /> },
       { path: 'events/:id', element: <ManageEvent /> },

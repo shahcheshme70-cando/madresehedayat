@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { MessageSquarePlus, Wrench, Award, Bell, LifeBuoy, Megaphone, BookOpen, CalendarDays, Compass, House, Landmark, LayoutDashboard, LogOut, MessageCircle, Settings, Building2, UsersRound, CalendarCog } from 'lucide-react';
+import { Flag, MessageSquarePlus, Wrench, Award, Bell, LifeBuoy, Megaphone, BookOpen, CalendarDays, Compass, House, Landmark, LayoutDashboard, LogOut, MessageCircle, Settings, Building2, UsersRound, CalendarCog } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { api } from '../lib/api';
@@ -41,6 +41,8 @@ export function useRoleLinks() {
   const leads = !!(me?.imamOf?.length || me?.cores?.some((c) => c.isLeader) || me?.orgs?.length);
   if (isStaff || has('RAHYAR', 'INSTRUCTOR') || leads) links.push({ to: '/manage/events', label: 'برگزاری برنامه', icon: CalendarCog });
   if (isStaff || has('RAHYAR') || leads) links.push({ to: '/broadcast', label: 'پیام گروهی', icon: Megaphone });
+  links.unshift({ to: '/campaigns', label: 'پویش‌ها', icon: Flag });
+  if (isStaff || has('RAHYAR') || me?.orgs?.length) links.push({ to: '/manage/campaigns', label: 'ساخت پویش', icon: Flag });
   links.push({ to: '/messages', label: 'پیام با راهیار', icon: MessageCircle });
   links.push({ to: '/help', label: 'کمک و پشتیبانی', icon: LifeBuoy });
   return links;

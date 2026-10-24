@@ -265,7 +265,10 @@ export class Campaigns {
     const s = new Date(d.startsAt), e = new Date(d.endsAt);
     if (e <= s) throw new BadRequestException(err('bad_dates', 'تاریخ پایان باید بعد از تاریخ شروع باشد'));
     if (e.getTime() - s.getTime() > 120 * 864e5) throw new BadRequestException(err('too_long', 'پویش حداکثر ۱۲۰ روز است؛ برای حرکت بلندتر چند پویش پشت‌سرهم بسازید'));
-    if (d.scope === 'NATIONAL' && !this.isHq(u)) throw new ForbiddenException(err('forbidden', 'پویش کشوری را فقط ستاد می‌سازد؛ شما می‌توانید پویش استانی بسازید'));
+    if (d.scope === 'NATIONAL' && !this.isHq(u)) {
+      const o = await this.manageOptions(u);
+      throw new ForbiddenException(err('forbidden', o.provinces.length || o.orgs.length ? 'پویش کشوری را فقط ستاد می‌سازد؛ شما پویش استانی یا ویژهٔ اعضای سازمانتان را می‌سازید' : 'ساختن پویش برای ستاد، راهیاران استانی و مدیران سازمان‌های مشترک است'));
+    }
     if (d.scope === 'ORG') {
       if (!d.networkId) throw new BadRequestException(err('no_org', 'سازمان پویش را انتخاب کنید'));
       const g = await this.business.orgGate(u, d.networkId, 'campaigns');
@@ -291,8 +294,8 @@ export class Campaigns {
   async update(u: AuthUser, id: string, d: CampaignDto) {
     const c = await this.get(id);
     await this.assertCanManage(u, c);
-    await this.validate(u, d);
     if (c.status === 'PUBLISHED' && (d.scope !== c.scope || (d.scope === 'PROVINCE' && (d.provinceId ?? null) !== c.provinceId) || (d.scope === 'ORG' && (d.networkId ?? null) !== c.networkId))) throw new BadRequestException(err('scope_locked', 'دامنهٔ پویش منتشرشده عوض نمی‌شود؛ چون کسانی پیوسته‌اند'));
+    await this.validate(u, d);
     await this.db.transaction(async (tx) => {
       await tx.update(campaigns).set({ title: d.title.trim(), summary: d.summary.trim(), body: d.body?.trim() || null, scope: d.scope, provinceId: d.scope === 'PROVINCE' ? d.provinceId! : null, networkId: d.scope === 'ORG' ? d.networkId! : null,
         goal: d.goal ?? null, startsAt: new Date(d.startsAt), endsAt: new Date(d.endsAt) }).where(eq(campaigns.id, id));

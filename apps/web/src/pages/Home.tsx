@@ -3,6 +3,7 @@ import { Award, ChevronLeft, Play, Route } from 'lucide-react';
 import { Link } from 'react-router';
 import { CourseCard } from '../components/CourseCard';
 import { CourseIcon, Empty, ErrorBox, Spinner } from '../components/ui';
+import { CampaignCard, useCampaigns } from './Campaigns';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { fa } from '../lib/fa';
@@ -20,6 +21,8 @@ export default function Home() {
   const paths = useQuery({ queryKey: ['paths'], queryFn: () => api<PathCard[]>('/paths') });
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: () => api<C[]>('/courses') });
   const events = useQuery({ queryKey: ['events', 'upcoming'], queryFn: () => api<EventCard[]>('/events?scope=upcoming') });
+  const camps = useCampaigns();
+  const live = (camps.data ?? []).filter((c) => c.phase === 'ACTIVE' || c.phase === 'UPCOMING');
   if (mine.isLoading) return <Spinner />;
   if (mine.error) return <ErrorBox error={mine.error} onRetry={() => mine.refetch()} />;
   const active = (mine.data ?? []).filter((c) => !c.me?.completedAt && !c.me?.archived);
@@ -52,6 +55,13 @@ export default function Home() {
           <h2 className="text-xl font-extrabold">{doneCount ? 'دورهٔ بعدی‌تان را انتخاب کنید' : 'از کجا شروع کنم؟'}</h2>
           <p className="max-w-xl text-muted">{doneCount ? `تا امروز ${fa(doneCount)} دوره را تمام کرده‌اید. یک مسیر را ادامه دهید یا دورهٔ تازه‌ای بردارید.` : 'یک مسیر را باز کنید و اولین دوره‌اش را شروع کنید. هر دوره چند درس کوتاه دارد و آخرش گواهی می‌گیرید.'}</p>
           <div><Link to="/learn" className="btn btn-primary">دیدن دوره‌ها<ChevronLeft className="size-4" /></Link></div>
+        </section>
+      )}
+
+      {live.length > 0 && (
+        <section>
+          <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-extrabold">پویش‌های جاری</h2><Link to="/campaigns" className="text-sm font-bold text-leaf-ink">همه</Link></div>
+          <div className="grid gap-3 lg:grid-cols-2">{live.slice(0, 2).map((c) => <CampaignCard key={c.id} c={c} />)}</div>
         </section>
       )}
 

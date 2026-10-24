@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpCode, NotFoundException, Param, Patch, Post } from '@nestjs/common';
 import { ArrayMaxSize, IsArray, IsOptional, IsString, Length } from 'class-validator';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { randomInt } from 'node:crypto';
 import { AuthUser, CurrentUser } from '../common/auth.decorators';
 import { normalizeMobile } from '../common/mobile';
@@ -252,7 +252,7 @@ export class CoresController {
     this.access.write(u.id, 'org.view', null);
     const net = await this.db.query.networks.findFirst({ where: eq(networks.id, id) });
     if (!net) throw new NotFoundException({ code: 'no_org', message: 'سازمان پیدا نشد' });
-    const direct = await this.db.select({ userId: networkMembers.userId }).from(networkMembers).where(eq(networkMembers.networkId, id));
+    const direct = await this.db.select({ userId: networkMembers.userId }).from(networkMembers).where(and(eq(networkMembers.networkId, id), isNotNull(networkMembers.acceptedAt)));
     const viaCores = await this.db.select({ userId: coreMemberships.userId }).from(coreMemberships).innerJoin(cores, eq(cores.id, coreMemberships.coreId)).where(eq(cores.networkId, id));
     const ids = [...new Set([...direct, ...viaCores].map((x) => x.userId))];
     const courseRows = await this.db.execute<{ id: string; title: string }>(sql`select distinct c.id, c.title from courses c where c.id in (
@@ -264,21 +264,50 @@ export class CoresController {
     const people = ids.length ? await this.db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName }).from(users).where(inArray(users.id, ids)) : [];
     return {
       id: net.id, name: net.name, underRahyar: net.underRahyar, courses: courseRows.rows, subscription: await this.business.summary(id),
+      pendingInvites: (await this.db.select({ n: count() }).from(networkMembers).where(and(eq(networkMembers.networkId, id), isNull(networkMembers.acceptedAt))))[0].n,
       members: people.map((p) => ({ id: p.id, name: `${p.firstName} ${p.lastName}`,
         courses: courseIds.map((cid) => { const e = prog.rows.find((r: any) => r.user_id === p.id && r.course_id === cid); return { courseId: cid, state: e ? (e.completed_at ? 'done' : 'active') : 'none' }; }) })),
     };
   }
 
+  /**
+   * افزودن با شماره = دعوت. کاربر در «تنظیمات» می‌پذیرد یا رد می‌کند؛ تا نپذیرد عضو و در گزارش‌ها نیست.
+   * پاسخ هرگز نمی‌گوید کدام شماره در مدرسه حساب دارد (تا از شماره نشود به هویت رسید).
+   */
   @Post('org/:id/members') @HttpCode(200)
   async addMembers(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() d: MobilesDto) {
     await this.orgAccess(u, id);
-    const norm = d.mobiles.map((m) => normalizeMobile(m)).filter(Boolean) as string[];
-    const found = norm.length ? await this.db.select({ id: users.id, mobile: users.mobile }).from(users).where(inArray(users.mobile, norm.map(mobileKey))) : [];
-    await this.business.assertSeats(id, found.map((f) => f.id));
-    for (const f of found) await this.db.insert(networkMembers).values({ networkId: id, userId: f.id }).onConflictDoNothing();
+    const norm = [...new Set(d.mobiles.map((m) => normalizeMobile(m)).filter(Boolean) as string[])];
+    const invalid = d.mobiles.length - d.mobiles.filter((m) => normalizeMobile(m)).length;
+    const found = norm.length ? await this.db.select({ id: users.id }).from(users).where(inArray(users.mobile, norm.map(mobileKey))) : [];
+    const fresh = found.length ? await this.db.insert(networkMembers).values(found.map((f) => ({ networkId: id, userId: f.id, invitedById: u.id }))).onConflictDoNothing().returning({ id: networkMembers.userId }) : [];
     const net = await this.db.query.networks.findFirst({ where: eq(networks.id, id) });
-    await this.notify.send(found.map((f) => f.id), { kind: 'org_join', title: `به اشتراک «${net?.name}» اضافه شدید`, body: 'دوره‌های این اشتراک حالا برایتان باز است.', link: '/learn' });
-    return { added: found.length, missing: d.mobiles.filter((m) => { const n = normalizeMobile(m); return !n || !found.some((f) => f.mobile === mobileKey(n)); }) };
+    await this.notify.send(fresh.map((f) => f.id), { kind: 'org_invite', title: `«${net?.name}» شما را به اشتراکش دعوت کرده است`, body: 'اگر عضو این سازمان هستید، دعوت را بپذیرید تا دوره‌های اشتراک برایتان باز شود.', link: '/settings#orgs' });
+    return { sent: norm.length, invalid };
+  }
+
+  @Get('me/orgs')
+  async myOrgs(@CurrentUser() u: AuthUser) {
+    const rows = await this.db.select({ id: networks.id, name: networks.name, acceptedAt: networkMembers.acceptedAt, createdAt: networkMembers.createdAt })
+      .from(networkMembers).innerJoin(networks, eq(networks.id, networkMembers.networkId)).where(eq(networkMembers.userId, u.id));
+    return { invites: rows.filter((r) => !r.acceptedAt).map((r) => ({ id: r.id, name: r.name, invitedAt: r.createdAt })), member: rows.filter((r) => r.acceptedAt).map((r) => ({ id: r.id, name: r.name, since: r.acceptedAt })) };
+  }
+
+  @Post('me/orgs/:id/accept') @HttpCode(200)
+  async acceptOrg(@CurrentUser() u: AuthUser, @Param('id') id: string) {
+    const row = await this.db.query.networkMembers.findFirst({ where: and(eq(networkMembers.networkId, id), eq(networkMembers.userId, u.id)) });
+    if (!row) throw new NotFoundException({ code: 'no_invite', message: 'دعوتی از این سازمان ندارید' });
+    if (row.acceptedAt) return { ok: true };
+    await this.business.assertSeats(id, [u.id]);
+    await this.db.update(networkMembers).set({ acceptedAt: new Date() }).where(and(eq(networkMembers.networkId, id), eq(networkMembers.userId, u.id)));
+    return { ok: true };
+  }
+
+  /** رد دعوت یا بیرون آمدن از سازمان (عضویت مستقیم؛ عضویت از راه هسته با ترک هسته تمام می‌شود) */
+  @Post('me/orgs/:id/leave') @HttpCode(200)
+  async leaveOrg(@CurrentUser() u: AuthUser, @Param('id') id: string) {
+    await this.db.delete(networkMembers).where(and(eq(networkMembers.networkId, id), eq(networkMembers.userId, u.id)));
+    return { ok: true };
   }
 
   @Delete('org/:id/members/:userId')

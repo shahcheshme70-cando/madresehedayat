@@ -374,6 +374,9 @@ export const privateFiles = pgTable('private_files', {
 export const networkMembers = pgTable('network_members', {
   networkId: text('network_id').notNull().references(() => networks.id, { onDelete: 'cascade' }),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  // عضویتی که مدیر سازمان با شماره اضافه می‌کند دعوت است؛ تا کاربر نپذیرد عضو حساب نمی‌شود (رضایت)
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  invitedById: text('invited_by_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: createdAt(),
 }, (t) => [primaryKey({ columns: [t.networkId, t.userId] })]);
 

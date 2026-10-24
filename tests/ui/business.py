@@ -15,6 +15,7 @@ async def main():
         print('sub', r.status)
         org = await login(b, '09126000001', '10.4.4.2'); lr = await login(b, '09126000002', '10.4.4.3')
         await org.request.post(f'{BASE}/api/org/{NET}/members', data={'mobiles': ['09126000002', '09126000003']})
+        await lr.request.post(f'{BASE}/api/me/orgs/{NET}/accept')
         for pg in (hq, org, lr):
             pg.on('pageerror', lambda e, pg=pg: errs.append(f'pageerror {e} @{pg.url}'))
             pg.on('console', lambda m, pg=pg: m.type == 'error' and 'Failed to load resource' not in m.text and errs.append(f'console {m.text[:160]} @{pg.url}'))

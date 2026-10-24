@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, Injectable, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { IsArray, IsIn, IsOptional, IsString, Length, Matches } from 'class-validator';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { AuthUser, CurrentUser, Roles } from '../common/auth.decorators';
 import { Db, InjectDb } from '../db/db.module';
 import { pgArr } from '../db/id';
@@ -55,7 +55,7 @@ export class Broadcasts {
         let r: string[];
         if (n.kind === 'BROTHERS' || n.kind === 'BANOUR') r = await pick(eq(users.gender, n.kind === 'BROTHERS' ? 'MALE' : 'FEMALE'));
         else {
-          const direct = await this.db.select({ id: networkMembers.userId }).from(networkMembers).where(eq(networkMembers.networkId, n.id));
+          const direct = await this.db.select({ id: networkMembers.userId }).from(networkMembers).where(and(eq(networkMembers.networkId, n.id), isNotNull(networkMembers.acceptedAt)));
           const viaCore = await this.db.select({ id: coreMemberships.userId }).from(coreMemberships).innerJoin(cores, eq(cores.id, coreMemberships.coreId)).where(eq(cores.networkId, n.id));
           r = [...new Set([...direct, ...viaCore].map((x) => x.id))];
         }

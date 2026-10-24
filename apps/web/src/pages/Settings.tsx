@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, KeyRound, LogOut, Moon, Sun, SunMoon } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
@@ -104,6 +104,8 @@ export default function Settings() {
         <div className="flex flex-wrap items-center justify-between gap-3"><div><b className="block text-ink">ورود با سامانهٔ پایه</b><span className="text-sm text-muted">{me!.ssoLinked ? 'حساب شما وصل است' : 'به‌زودی؛ هنوز راه نیفتاده'}</span></div><KeyRound className="size-5 text-muted" /></div>
       </section>
 
+      <OrgsSection />
+
       <MessengerSection />
 
       <section className="card grid gap-3 p-6">
@@ -128,5 +130,33 @@ export default function Settings() {
 
       <button className="btn btn-secondary w-fit" onClick={async () => { await logout(); nav('/login'); }}><LogOut className="size-4" />خروج از حساب</button>
     </div>
+  );
+}
+
+/** دعوت‌های سازمان‌های مشترک و عضویت مستقیم؛ عضویت فقط با پذیرش خود کاربر */
+function OrgsSection() {
+  const qc = useQueryClient(); const toast = useToast();
+  const q = useQuery({ queryKey: ['my-orgs'], queryFn: () => api<{ invites: { id: string; name: string; invitedAt: string }[]; member: { id: string; name: string }[] }>('/me/orgs') });
+  const done = () => { qc.invalidateQueries({ queryKey: ['my-orgs'] }); qc.invalidateQueries({ queryKey: ['me'] }); };
+  const accept = useMutation({ mutationFn: (id: string) => api(`/me/orgs/${id}/accept`, { method: 'POST' }), onSuccess: () => { done(); toast('عضو اشتراک شدید؛ دوره‌هایش حالا باز است'); }, onError: (e) => toast((e as Error).message, 'err') });
+  const leave = useMutation({ mutationFn: (id: string) => api(`/me/orgs/${id}/leave`, { method: 'POST' }), onSuccess: () => { done(); toast('انجام شد'); }, onError: (e) => toast((e as Error).message, 'err') });
+  const d = q.data;
+  // از اعلان دعوت با #orgs می‌آیند
+  useEffect(() => { if (d && window.location.hash === '#orgs') document.getElementById('orgs')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, [d]);
+  if (!d || (!d.invites.length && !d.member.length)) return null;
+  return (
+    <section id="orgs" className="card grid gap-3 p-6">
+      <h2 className="text-lg font-extrabold">سازمان‌ها</h2>
+      {d.invites.map((o) => (
+        <div key={o.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-leaf-soft p-3">
+          <span className="text-ink"><b>«{o.name}»</b> شما را به اشتراکش دعوت کرده است.</span>
+          <div className="flex gap-2"><button className="btn btn-primary btn-sm" disabled={accept.isPending} onClick={() => accept.mutate(o.id)}>می‌پذیرم</button><button className="btn btn-ghost btn-sm" disabled={leave.isPending} onClick={() => leave.mutate(o.id)}>عضو این سازمان نیستم</button></div>
+        </div>
+      ))}
+      {d.member.map((o) => (
+        <div key={o.id} className="flex flex-wrap items-center justify-between gap-3"><span className="text-ink">عضو اشتراک <b>«{o.name}»</b></span><button className="btn btn-ghost btn-sm" disabled={leave.isPending} onClick={() => leave.mutate(o.id)}>بیرون آمدن</button></div>
+      ))}
+      <p className="hint">مدیر سازمان فقط نام شما و پیشرفت دوره‌های همان اشتراک را می‌بیند؛ شمارهٔ همراه و نوشته‌هایتان را نمی‌بیند.</p>
+    </section>
   );
 }

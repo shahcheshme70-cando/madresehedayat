@@ -37,7 +37,7 @@ export class RahyarService {
     const as = await this.db.select().from(rahyarAssignments);
     const cs = await this.db.select({ id: counties.id, provinceId: counties.provinceId }).from(counties);
     // اعضای سازمان‌هایی که «زیر راهیاری نیستند» و عضو شبکهٔ برادران/بانور هم نیستند
-    const orgOut = await this.db.select({ userId: networkMembers.userId, under: networks.underRahyar, kind: networks.kind }).from(networkMembers).innerJoin(networks, eq(networks.id, networkMembers.networkId));
+    const orgOut = await this.db.select({ userId: networkMembers.userId, under: networks.underRahyar, kind: networks.kind }).from(networkMembers).innerJoin(networks, eq(networks.id, networkMembers.networkId)).where(isNotNull(networkMembers.acceptedAt));
     const coreNets = await this.db.select({ userId: coreMemberships.userId, under: networks.underRahyar, kind: networks.kind }).from(coreMemberships)
       .innerJoin(cores, eq(cores.id, coreMemberships.coreId)).innerJoin(networks, eq(networks.id, cores.networkId));
     const byUser = new Map<string, { under: boolean; kind: string }[]>();

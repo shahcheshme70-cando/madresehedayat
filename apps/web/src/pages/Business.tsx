@@ -79,7 +79,7 @@ export function BusinessKpi() {
           <span style={{ width: `${pct(k.income.subscriptions)}%` }} className="bg-leaf" /><span style={{ width: `${pct(k.income.sponsors)}%` }} className="bg-dome" /><span style={{ width: `${pct(k.income.services)}%` }} className="bg-flame" />
         </div>
         <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted">
-          <span><i className="me-1 inline-block size-2.5 rounded-sm bg-leaf" />اشتراک {moneyShort(k.income.subscriptions)}</span>
+          <span><i className="me-1 inline-block size-2.5 rounded-sm bg-leaf" />سازمان‌ها {moneyShort(k.income.subscriptions)}</span>
           <span><i className="me-1 inline-block size-2.5 rounded-sm bg-dome" />حامیان {moneyShort(k.income.sponsors)}</span>
           <span><i className="me-1 inline-block size-2.5 rounded-sm bg-flame" />خدمات {moneyShort(k.income.services)}</span>
           <span><i className="me-1 inline-block size-2.5 rounded-sm bg-line" />ستاد {moneyShort(k.hqShare)}</span>

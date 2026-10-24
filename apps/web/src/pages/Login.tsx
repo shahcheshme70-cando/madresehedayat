@@ -7,6 +7,7 @@ import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { fa, maskMobile, toEn } from '../lib/fa';
 import type { Me } from '../lib/types';
+import { useToast } from '../components/ui';
 
 type Step = 'mobile' | 'code' | 'register';
 interface Province { id: string; name: string; counties: { id: string; name: string }[] }
@@ -169,6 +170,7 @@ function Register({ regToken, mobile, invite, onDone }: { regToken: string; mobi
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const toast = useToast();
   const counties = useMemo(() => geo.data?.find((p) => p.id === f.provinceId)?.counties ?? [], [geo.data, f.provinceId]);
   const mosques = useQuery({ queryKey: ['mosques', f.countyId], enabled: !!f.countyId, queryFn: () => api<{ id: string; name: string }[]>(`/geo/mosques?countyId=${f.countyId}`) });
   const set = (k: keyof typeof f, v: string) => { setF((x) => ({ ...x, [k]: v })); setErrs((e) => ({ ...e, [k]: '' })); };
@@ -185,11 +187,12 @@ function Register({ regToken, mobile, invite, onDone }: { regToken: string; mobi
     setErrs(er); if (Object.keys(er).length) return;
     setBusy(true); setErr('');
     try {
-      const r = await api<{ user: Me }>('/auth/register', { body: {
+      const r = await api<{ user: Me; notice?: string | null }>('/auth/register', { body: {
         regToken, firstName: f.firstName, lastName: f.lastName, gender: f.gender, countyId: f.countyId,
         mosqueId: f.mosqueMode === 'list' ? f.mosqueId : undefined, nearMosque: f.mosqueMode !== 'list' ? f.nearMosque : undefined,
         inviteCode: f.inviteCode || undefined,
       } });
+      if (r.notice) toast(r.notice, 'err');
       onDone(r.user);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }

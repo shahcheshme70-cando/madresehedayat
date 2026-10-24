@@ -105,6 +105,16 @@ const BY_STATUS: Record<number, [string, string]> = {
 /* ───────── خطاهای پایگاه داده (کدهای Postgres) ───────── */
 /** drizzle خطای Postgres را در cause می‌پیچد؛ کد اصلی را از هر لایه بیرون می‌کشد */
 export const pgCode = (e: any): string | undefined => [e, e?.cause, e?.cause?.cause].find((x) => x && typeof x.code === 'string' && /^[0-9A-Z]{5}$/.test(x.code))?.code;
+/**
+ * متن امن یک خطا برای گزارش سرور: drizzle در پیام خطا پارامترهای پرس‌وجو (یعنی دادهٔ کاربر) را هم می‌آورد؛
+ * این‌جا فقط کد و پیام Postgres و متن SQL بدون پارامترها نوشته می‌شود.
+ */
+export function logText(e: any): string {
+  if (e && typeof e.query === 'string' && e.cause) return `${pgCode(e) ?? ''} ${e.cause?.message ?? ''} | sql: ${e.query.slice(0, 200)}`.trim();
+  const msg = String(e?.message ?? e).replace(/\nparams:[\s\S]*$/, '').replace(/params: [\s\S]*$/, '');
+  const stack = typeof e?.stack === 'string' ? e.stack.split('\n').slice(1, 6).join('\n') : '';
+  return stack ? `${msg}\n${stack}` : msg;
+}
 /** خطای «تکراری» (unique) — برای کارهایی که هم‌زمانی را با تلاش دوباره حل می‌کنند */
 export const isUnique = (e: unknown) => pgCode(e) === '23505';
 
@@ -159,12 +169,12 @@ export class AllErrorsFilter implements ExceptionFilter {
     const db = pgError(e);
     const ref = randomBytes(4).toString('hex').toUpperCase();
     if (db) {
-      if (db.status >= 500) this.log.error(`[${ref}] ${req.method} ${req.path} → ${db.code}: ${any?.cause?.message ?? any?.message}`);
+      if (db.status >= 500) this.log.error(`[${ref}] ${req.method} ${req.path} → ${db.code}: ${logText(e)}`);
       const { status, ...body } = db;
       return res.status(status).json(status >= 500 ? { ...body, ref } : body);
     }
     // ناشناخته: پیام فنی به کاربر نمی‌رود، فقط کد پیگیری
-    this.log.error(`[${ref}] ${req.method} ${req.path} → ${any?.stack ?? any}`);
+    this.log.error(`[${ref}] ${req.method} ${req.path} → ${logText(e)}`);
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       code: 'server_error', ref,
       message: `خطایی در سرور پیش آمد و ثبت شد. اگر دوباره تکرار شد، این کد را به پشتیبانی بدهید: ${ref}`,

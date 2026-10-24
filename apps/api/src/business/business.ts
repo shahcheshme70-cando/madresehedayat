@@ -1,9 +1,10 @@
 import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpCode, Injectable, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsObject, IsOptional, IsString, Length, Max, Min, ValidateNested } from 'class-validator';
-import { and, asc, count, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, sql } from 'drizzle-orm';
 import type { Response } from 'express';
 import { AuthUser, CurrentUser, Roles } from '../common/auth.decorators';
+import { csvCell } from '../common/csv';
 import { isUnique } from '../common/errors';
 import { jalaliNow, jalaliQuarter, tehranStart } from '../common/jalali';
 import { Db, InjectDb } from '../db/db.module';
@@ -124,7 +125,7 @@ export class Business {
 
   /** همهٔ اعضای یک سازمان: عضو مستقیم + اعضای هسته‌های آن */
   async memberIds(networkId: string) {
-    const direct = await this.db.select({ id: networkMembers.userId }).from(networkMembers).where(eq(networkMembers.networkId, networkId));
+    const direct = await this.db.select({ id: networkMembers.userId }).from(networkMembers).where(and(eq(networkMembers.networkId, networkId), isNotNull(networkMembers.acceptedAt)));
     const viaCores = await this.db.select({ id: coreMemberships.userId }).from(coreMemberships).innerJoin(cores, eq(cores.id, coreMemberships.coreId)).where(eq(cores.networkId, networkId));
     return [...new Set([...direct, ...viaCores].map((r) => r.id))];
   }
@@ -133,7 +134,7 @@ export class Business {
   async orgsOfUser(userId: string) {
     const r = await this.db.execute<{ id: string }>(sql`
       select n.id from networks n where n.kind = 'ORGANIZATION' and (
-        exists(select 1 from network_members m where m.network_id = n.id and m.user_id = ${userId})
+        exists(select 1 from network_members m where m.network_id = n.id and m.user_id = ${userId} and m.accepted_at is not null)
         or exists(select 1 from core_memberships cm join cores c on c.id = cm.core_id where c.network_id = n.id and cm.user_id = ${userId}))`);
     return r.rows.map((x) => x.id);
   }
@@ -356,7 +357,9 @@ export class Business {
     const inv = await this.db.query.invoices.findFirst({ where: eq(invoices.id, id) });
     if (!inv) throw new NotFoundException(err('no_invoice', 'فاکتور پیدا نشد'));
     if (inv.status !== 'ISSUED') throw new BadRequestException(err('not_open', inv.status === 'PAID' ? 'این فاکتور پیش‌تر پرداخت شده' : 'این فاکتور باطل شده است'));
-    await this.db.update(invoices).set({ status: 'PAID', paymentRef: d.paymentRef.trim(), paidAt: d.paidAt ? new Date(d.paidAt) : new Date(), method: 'TRANSFER' }).where(eq(invoices.id, id));
+    // شرط وضعیت در خود UPDATE: پرداخت و ابطال هم‌زمان هم‌دیگر را پاک نمی‌کنند
+    const done = await this.db.update(invoices).set({ status: 'PAID', paymentRef: d.paymentRef.trim(), paidAt: d.paidAt ? new Date(d.paidAt) : new Date(), method: 'TRANSFER' }).where(and(eq(invoices.id, id), eq(invoices.status, 'ISSUED'))).returning({ id: invoices.id });
+    if (!done.length) throw new BadRequestException(err('not_open', 'وضع این فاکتور همین حالا عوض شد؛ صفحه را تازه کنید'));
     await this.db.insert(auditLogs).values({ actorId: u.id, action: 'invoice.pay', target: id, meta: { ref: d.paymentRef } });
     return { ok: true };
   }
@@ -364,7 +367,8 @@ export class Business {
     const inv = await this.db.query.invoices.findFirst({ where: eq(invoices.id, id) });
     if (!inv) throw new NotFoundException(err('no_invoice', 'فاکتور پیدا نشد'));
     if (inv.status === 'PAID') throw new BadRequestException(err('paid', 'فاکتور پرداخت‌شده باطل نمی‌شود؛ برای برگشت پول، فاکتور برگشتی بیرون از سامانه ثبت کنید'));
-    await this.db.update(invoices).set({ status: 'VOID' }).where(eq(invoices.id, id));
+    const done = await this.db.update(invoices).set({ status: 'VOID' }).where(and(eq(invoices.id, id), eq(invoices.status, 'ISSUED'))).returning({ id: invoices.id });
+    if (!done.length) throw new BadRequestException(err('not_open', 'وضع این فاکتور همین حالا عوض شد؛ صفحه را تازه کنید'));
     await this.db.insert(auditLogs).values({ actorId: u.id, action: 'invoice.void', target: id });
     return { ok: true };
   }
@@ -451,7 +455,8 @@ export class Business {
     const paid = await this.db.select({ amount: invoices.amount, sub: invoices.subscriptionId, svc: invoices.serviceOrderId, sponsor: invoices.sponsorId }).from(invoices)
       .where(and(eq(invoices.status, 'PAID'), gte(invoices.paidAt, y0), lt(invoices.paidAt, y1)));
     const sum = (f: (x: (typeof paid)[number]) => boolean) => paid.filter(f).reduce((a, x) => a + x.amount, 0);
-    const income = { subscriptions: sum((x) => !!x.sub), services: sum((x) => !x.sub && !!x.svc), sponsors: sum((x) => !x.sub && !x.svc && !!x.sponsor) };
+    // فاکتوری که فقط به سازمان وصل است (بی‌اشتراک و بی‌خدمت) هم درآمد سازمان‌ها حساب می‌شود؛ هیچ پرداختی بیرون نمی‌ماند
+    const income = { subscriptions: sum((x) => !!x.sub || (!x.svc && !x.sponsor)), services: sum((x) => !x.sub && !!x.svc), sponsors: sum((x) => !x.sub && !x.svc && !!x.sponsor) };
     const incomeTotal = income.subscriptions + income.services + income.sponsors;
     return {
       period: 'last365', activeUsers: active.length, fieldActive: field.length,
@@ -512,7 +517,7 @@ export class Business {
     const yearAgo = new Date(Date.now() - 365 * DAY);
     const field = new Set(await this.fieldActiveIds(yearAgo, new Date(), ids));
     const lessonsDone = ids.length ? (await this.db.execute<{ uid: string; n: number }>(sql`select user_id as uid, count(*)::int as n from lesson_progress where completed_at is not null and user_id = any(${pgArr(ids)}::text[]) group by user_id`)).rows : [];
-    const q = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
+    const q = csvCell;
     const head = ['نام', 'نام خانوادگی', 'درس‌های تمام‌شده', 'فعال میدانی در ۱۲ ماه', ...cs.map((c) => c.title)];
     const lines = people.sort((a, b) => a.l.localeCompare(b.l, 'fa')).map((p) => [p.f, p.l, String(lessonsDone.find((x) => x.uid === p.id)?.n ?? 0), field.has(p.id) ? 'بله' : 'نه',
       ...cs.map((c) => { const e = en.find((x) => x.userId === p.id && x.courseId === c.id); return !e ? 'شروع نکرده' : e.completedAt ? 'تمام‌شده' : 'در حال یادگیری'; })]);

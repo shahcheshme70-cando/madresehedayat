@@ -5,7 +5,8 @@ import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 
 import { config } from '../config';
 import { dec, enc, mobileKey } from '../common/crypto';
 import { Db, InjectDb } from '../db/db.module';
-import { coreMemberships, cores, mosques, otpRequests, roleGrants, sessions, users } from '../db/schema';
+import { coreMemberships, cores, mosques, networks, otpRequests, roleGrants, sessions, users } from '../db/schema';
+import { Business } from '../business/business';
 import { RoleName } from '../common/auth.decorators';
 import { SmsSender } from '../sms/sms';
 import { Messenger } from '../messenger/messenger';
@@ -29,7 +30,7 @@ export interface RegisterInput {
 
 @Injectable()
 export class AuthService {
-  constructor(@InjectDb() private readonly db: Db, private readonly jwt: JwtService, private readonly sms: SmsSender, private readonly messenger: Messenger) {}
+  constructor(@InjectDb() private readonly db: Db, private readonly jwt: JwtService, private readonly sms: SmsSender, private readonly messenger: Messenger, private readonly business: Business) {}
 
   private otpHash(mobile: string, code: string) {
     return createHmac('sha256', config.otpSecret).update(`${mobile}:${code}`).digest('hex');
@@ -99,7 +100,7 @@ export class AuthService {
       throw new BadRequestException({ code: 'reg_expired', message: 'زمان ثبت‌نام تمام شد؛ دوباره شماره را وارد کنید' });
     }
     const existing = await this.db.query.users.findFirst({ where: eq(users.mobile, mobileKey(mobile)) });
-    if (existing) return existing.id;
+    if (existing) return { userId: existing.id, notice: null as string | null };
     const [u] = await this.db.insert(users).values({
       mobile: mobileKey(mobile), mobileEnc: enc(mobile),
       firstName: input.firstName.trim(),
@@ -109,16 +110,21 @@ export class AuthService {
       mosqueId: input.mosqueId || null,
       nearMosque: input.mosqueId ? null : input.nearMosque?.trim() || null,
     }).returning();
+    let notice: string | null = null;
     if (input.inviteCode) {
       const code = input.inviteCode.trim().toLowerCase();
       const core = await this.db.query.cores.findFirst({ where: eq(cores.inviteCode, code) });
-      if (core) await this.db.insert(coreMemberships).values({ coreId: core.id, userId: u.id }).onConflictDoNothing();
+      // هستهٔ سازمان مشترک: سقف اشتراک همین‌جا هم رعایت می‌شود؛ حساب ساخته می‌شود ولی عضو هسته نمی‌شود
+      const net = core?.networkId ? await this.db.query.networks.findFirst({ where: eq(networks.id, core.networkId) }) : null;
+      const full = net?.kind === 'ORGANIZATION' ? await this.business.assertSeats(net.id, [u.id]).then(() => false, () => true) : false;
+      if (core && full) notice = `حسابتان ساخته شد، ولی ظرفیت «${net!.name}» پر است و به هستهٔ «${core.name}» اضافه نشدید. به مسئول هسته خبر بدهید.`;
+      else if (core) await this.db.insert(coreMemberships).values({ coreId: core.id, userId: u.id }).onConflictDoNothing();
       else {
         const m = await this.db.query.mosques.findFirst({ where: eq(mosques.inviteCode, code) });
         if (m) await this.db.update(users).set({ mosqueId: m.id, nearMosque: null }).where(eq(users.id, u.id));
       }
     }
-    return u.id;
+    return { userId: u.id, notice };
   }
 
   async rolesOf(userId: string): Promise<RoleName[]> {

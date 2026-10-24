@@ -11,8 +11,8 @@ import { JalaliInput } from '../components/JalaliInput';
 const useBase = () => (useLocation().pathname.startsWith('/admin') ? '/admin/events' : '/manage/events');
 
 interface MRow { id: string; title: string; kind: string; startsAt: string; status: string; registered: number; waitlist: number; pending: number; attended: number; capacity: number | null }
-interface Person { userId: string; name: string; status: string; code: string; attendedAt: string | null; method: string | null; liveMinutes?: number; lateCancel: boolean; feedback: { rating: number; comment?: string } | null; county: string | null; mosque: string | null; byGroup: boolean }
-interface Full { event: any; counts: { registered: number; waitlist: number; pending: number; attended: number }; rating: number | null; people: Person[] }
+interface Person { userId: string; name: string; status: string; code: string; attendedAt: string | null; method: string | null; liveMinutes?: number; lateCancel: boolean; feedback: { rating: number } | null; county: string | null; mosque: string | null; byGroup: boolean }
+interface Full { event: any; counts: { registered: number; waitlist: number; pending: number; attended: number }; rating: number | null; comments?: string[]; people: Person[] }
 
 const ST: Record<string, [string, string]> = { DRAFT: ['', 'پیش‌نویس'], PUBLISHED: ['chip-leaf', 'منتشر شده'], CANCELLED: ['chip-rose', 'لغو شده'] };
 
@@ -178,7 +178,7 @@ export function ManageEvent() {
   };
   if (q.isLoading) return <Spinner />;
   if (q.error) return <ErrorBox error={q.error} />;
-  const { event: e, counts, people, rating } = q.data!;
+  const { event: e, counts, people, rating, comments = [] } = q.data!;
   const list = people.filter((p) => (tab === 'ATTENDED' ? p.attendedAt : p.status === tab));
   const tabs: [string, string, number][] = [['REGISTERED', 'ثبت‌نام', counts.registered], ['WAITLIST', 'انتظار', counts.waitlist], ['PENDING', 'منتظر تأیید', counts.pending], ['ATTENDED', 'حاضر', counts.attended], ['CANCELLED', 'انصراف', people.filter((p) => p.status === 'CANCELLED').length]];
   return (
@@ -207,7 +207,7 @@ export function ManageEvent() {
               <thead><tr className="border-b border-line text-muted"><th className="py-2 text-start font-semibold">نام</th><th className="text-start font-semibold">شهرستان / مسجد</th><th className="font-semibold">کد</th><th className="font-semibold">حضور</th><th /></tr></thead>
               <tbody>{list.map((p) => (
                 <tr key={p.userId} className="border-b border-line last:border-0">
-                  <td className="py-2.5"><b className="text-ink">{p.name}</b>{p.byGroup && <span className="block text-xs text-muted">ثبت‌نام گروهی</span>}{p.lateCancel && <span className="block text-xs text-flame-ink">انصراف دیرهنگام</span>}{p.feedback?.comment && <span className="block text-xs text-muted">«{p.feedback.comment}»</span>}</td>
+                  <td className="py-2.5"><b className="text-ink">{p.name}</b>{p.byGroup && <span className="block text-xs text-muted">ثبت‌نام گروهی</span>}{p.lateCancel && <span className="block text-xs text-flame-ink">انصراف دیرهنگام</span>}</td>
                   <td className="text-muted">{[p.county, p.mosque].filter(Boolean).join(' · ')}</td>
                   <td dir="ltr" className="tnum text-center text-muted">{p.status === 'REGISTERED' ? p.code : ''}</td>
                   <td className="text-center">{p.attendedAt ? <span className="chip chip-leaf">{p.method === 'ONLINE' ? 'آنلاین' : p.method === 'QR' ? 'با کارت' : 'دستی'}</span> : '—'}{p.liveMinutes != null && p.liveMinutes > 0 && <span className="hint block">{fa(p.liveMinutes)} دقیقه در کلاس</span>}</td>
@@ -224,6 +224,10 @@ export function ManageEvent() {
         ) : <p className="py-8 text-center text-sm text-muted">کسی در این فهرست نیست.</p>}
         <p className="hint mt-3">شمارهٔ همراه شرکت‌کنندگان نشان داده نمی‌شود؛ برای خبر دادن از «پیام به ثبت‌نامی‌ها» استفاده کنید.</p>
       </section>
+      {comments.length > 0 && <section className="card grid gap-3 p-5">
+        <h2 className="font-extrabold">نظر شرکت‌کنندگان <span className="text-sm font-normal text-muted">(بی‌نام)</span></h2>
+        <ul className="grid gap-2">{comments.map((c, i) => <li key={i} className="rounded-xl bg-sunken px-3 py-2 text-sm text-body">«{c}»</li>)}</ul>
+      </section>}
       <Dialog open={dlg === 'cancel'} onClose={() => setDlg(null)} title="لغو برنامه">
         <div className="grid gap-3"><label htmlFor="rs" className="text-sm font-bold">دلیل لغو <span className="font-normal text-muted">(برای همهٔ ثبت‌نامی‌ها فرستاده می‌شود)</span></label>
           <textarea id="rs" className="input" value={reason} onChange={(x) => setReason(x.target.value)} />

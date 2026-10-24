@@ -1,6 +1,6 @@
 import { isUnique } from '../common/errors';
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { randomInt } from 'node:crypto';
 import { Db, InjectDb } from '../db/db.module';
 import { Business } from '../business/business';
@@ -29,7 +29,7 @@ export class LearningService {
     const viaCores = await this.db.select({ id: cores.networkId }).from(coreMemberships)
       .innerJoin(cores, eq(cores.id, coreMemberships.coreId)).where(eq(coreMemberships.userId, userId));
     const viaRoles = await this.db.select({ id: roleGrants.networkId }).from(roleGrants).where(eq(roleGrants.userId, userId));
-    const viaMembers = await this.db.select({ id: networkMembers.networkId }).from(networkMembers).where(eq(networkMembers.userId, userId));
+    const viaMembers = await this.db.select({ id: networkMembers.networkId }).from(networkMembers).where(and(eq(networkMembers.userId, userId), isNotNull(networkMembers.acceptedAt)));
     return [...new Set([...viaCores, ...viaRoles, ...viaMembers].map((r) => r.id).filter(Boolean) as string[])];
   }
 

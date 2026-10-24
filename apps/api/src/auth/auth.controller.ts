@@ -72,10 +72,10 @@ export class AuthController {
   @Public() @Post('register') @HttpCode(200)
   async register(@Body() dto: RegisterDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const { regToken, ...input } = dto;
-    const userId = await this.auth.register(regToken, input);
+    const { userId, notice } = await this.auth.register(regToken, input);
     await this.linkEitaa(req, res, userId);
     this.setCookies(res, await this.auth.issueTokens(userId, req.headers['user-agent']));
-    return { user: await this.profile(userId) };
+    return { user: await this.profile(userId), notice };
   }
 
   @Public() @Post('refresh') @HttpCode(200)

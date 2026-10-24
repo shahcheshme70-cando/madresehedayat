@@ -192,17 +192,20 @@ export class Campaigns {
   /** مسئول هسته همهٔ اعضای هسته را می‌پیوندد (دوباره زدن، اعضای تازه را هم می‌آورد) */
   async joinCore(u: AuthUser, id: string, coreId: string) {
     const c = await this.get(id);
+    if (!this.visible(c, await this.provinceOf(u.id), await this.business.orgsOfUser(u.id)) && !this.isHq(u)) throw new ForbiddenException(c.scope === 'ORG' ? err('other_org', 'این پویش ویژهٔ اعضای یک سازمان است') : err('other_province', 'این پویش استانی است و فقط ساکنان همان استان می‌توانند بپیوندند'));
     this.assertOpen(c, true);
     const core = await this.db.query.cores.findFirst({ where: eq(cores.id, coreId) });
     if (!core) throw new NotFoundException(err('no_core', 'هسته پیدا نشد'));
     if (core.leaderId !== u.id && !this.isHq(u)) throw new ForbiddenException(err('not_leader', 'فقط مسئول هسته می‌تواند هسته را به پویش بپیوندد'));
     const ms = await this.db.select({ id: coreMemberships.userId }).from(coreMemberships).where(eq(coreMemberships.coreId, coreId));
     const all = [...new Set([u.id, ...ms.map((m) => m.id)])];
-    await this.db.insert(campaignCores).values({ campaignId: id, coreId, joinedById: u.id }).onConflictDoNothing();
     const added = await this.addMembers(c, all, coreId);
+    // هسته فقط وقتی «پیوسته» شمرده می‌شود که دست‌کم یک عضوش در دامنهٔ پویش باشد
+    const inScope = (await this.db.select({ n: count() }).from(campaignMembers).where(and(eq(campaignMembers.campaignId, id), inArray(campaignMembers.userId, all))))[0].n;
+    if (inScope) await this.db.insert(campaignCores).values({ campaignId: id, coreId, joinedById: u.id }).onConflictDoNothing();
     const others = added.filter((x) => x !== u.id);
     if (others.length) await this.notify.send(others, { kind: 'campaign_core', title: `هستهٔ «${core.name}» به پویش «${c.title}» پیوست`, body: 'کارهای کوتاه پویش را ببینید و هر کدام را انجام دادید علامت بزنید.', link: `/campaigns/${id}` });
-    const skipped = all.length - (await this.db.select({ n: count() }).from(campaignMembers).where(and(eq(campaignMembers.campaignId, id), inArray(campaignMembers.userId, all))))[0].n;
+    const skipped = all.length - inScope;
     return { ok: true, added: added.length, skipped };
   }
 
@@ -222,7 +225,7 @@ export class Campaigns {
   async undone(u: AuthUser, id: string, taskId: string) {
     const c = await this.get(id);
     if (this.phase(c) === 'ENDED') throw new BadRequestException(err('campaign_ended', 'زمان پویش تمام شده و کارهای ثبت‌شده دیگر عوض نمی‌شوند'));
-    await this.db.delete(campaignDone).where(and(eq(campaignDone.taskId, taskId), eq(campaignDone.userId, u.id)));
+    await this.db.delete(campaignDone).where(and(eq(campaignDone.taskId, taskId), eq(campaignDone.userId, u.id), eq(campaignDone.campaignId, id)));
     return { ok: true };
   }
 

@@ -1,3 +1,4 @@
+import { logText } from '../common/errors';
 import { Body, Controller, Delete, Get, Header, HttpCode, Injectable, Logger, OnModuleDestroy, OnModuleInit, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 import type { Response } from 'express';
@@ -78,7 +79,7 @@ export class Scheduler implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     if (process.env.SCHEDULER === 'off') return;
-    const safe = (name: string, fn: () => Promise<unknown>) => () => fn().catch((e) => this.log.error(`${name}: ${e?.message ?? e}`));
+    const safe = (name: string, fn: () => Promise<unknown>) => () => fn().catch((e) => this.log.error(`${name}: ${logText(e)}`));
     this.timers.push(setInterval(safe('reminders', () => this.events.sendReminders()), 60_000));
     // کلاس زنده: حاضران هر دقیقه، حضور نهایی و ضبط‌ها هر ۵ دقیقه
     this.timers.push(setInterval(safe('live-poll', () => this.live.poll()), 60_000));

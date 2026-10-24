@@ -12,7 +12,7 @@ export class DemoError extends Error {
 }
 const E = (status: number, code: string, message: string, data: Any = {}) => new DemoError(status, code, message, data);
 
-const KEY = 'mh-demo-v3';
+const KEY = 'mh-demo-v4';
 const DEMO_CODE = '12345';
 export const DEMO_ADMIN = '09120000000';
 const now = () => new Date().toISOString();
@@ -150,7 +150,7 @@ const enr = (uid: string, cid: string) => DBV.enrollments.find((e) => e.userId =
 const prog = (uid: string, lid: string) => DBV.progress.find((p) => p.userId === uid && p.lessonId === lid);
 const granted = (uid?: string) => {
   if (!uid) return new Set<string>();
-  const nets = new Set([...DBV.roles.filter((r) => r.userId === uid && r.networkId).map((r) => r.networkId), ...DBV.netMembers.filter((x) => x.userId === uid).map((x) => x.networkId)]);
+  const nets = new Set([...DBV.roles.filter((r) => r.userId === uid && r.networkId).map((r) => r.networkId), ...DBV.netMembers.filter((x) => x.userId === uid && x.acceptedAt !== null).map((x) => x.networkId)]);
   return new Set([...DBV.grants.filter((g) => (g.userId === uid || (g.networkId && nets.has(g.networkId))) && (!g.expiresAt || g.expiresAt > now())).map((g) => g.courseId), ...HOOK.subscribedCourseIds(uid)]);
 };
 const canSee = (c: Any, g: Set<string>) => c.status === 'PUBLISHED' && (!c.isRestricted || g.has(c.id));
@@ -648,7 +648,7 @@ on('GET', '/org', () => { const u = me(); const ids = DBV.roles.filter((r) => r.
 const orgGuard = (id: string) => { const u = me(); if (!rolesOf(u.id).includes('HQ_ADMIN') && !DBV.roles.some((r) => r.userId === u.id && r.role === 'ORG_ADMIN' && r.networkId === id)) throw E(403, 'forbidden', 'مدیر این سازمان نیستید'); };
 on('GET', '/org/([^/]+)', (m) => { orgGuard(m[1]); const n = DBV.networks.find((x) => x.id === m[1]); const cids = [...new Set(DBV.grants.filter((g) => g.networkId === n.id).map((g) => g.courseId))];
   return { id: n.id, name: n.name, underRahyar: n.underRahyar, courses: cids.map((id) => ({ id, title: DBV.courses.find((c) => c.id === id)?.title })),
-    members: DBV.netMembers.filter((x: Any) => x.networkId === n.id).map((x: Any) => ({ id: x.userId, name: nm(x.userId), courses: cids.map((cid) => { const e = enr(x.userId, cid); return { courseId: cid, state: e ? (e.completedAt ? 'done' : 'active') : 'none' }; }) })) }; });
+    members: DBV.netMembers.filter((x: Any) => x.networkId === n.id && x.acceptedAt !== null).map((x: Any) => ({ id: x.userId, name: nm(x.userId), courses: cids.map((cid) => { const e = enr(x.userId, cid); return { courseId: cid, state: e ? (e.completedAt ? 'done' : 'active') : 'none' }; }) })) }; });
 on('POST', '/org/([^/]+)/members', (m, b) => { orgGuard(m[1]); const missing: string[] = []; let added = 0;
   for (const mob of b.mobiles) { const n = normMobile(mob); const u = n && DBV.users.find((x) => x.mobile === n); if (!u) { missing.push(mob); continue; } if (!DBV.netMembers.some((x: Any) => x.networkId === m[1] && x.userId === u.id)) { DBV.netMembers.push({ networkId: m[1], userId: u.id }); } added++; }
   return { added, missing }; });
@@ -696,8 +696,8 @@ const evFields = ['title', 'description', 'agenda', 'kind', 'location', 'mapUrl'
 on('POST', '/manage/events', (_m, b) => { const u = me(); const r = rolesOf(u.id); if (!isHQ(u.id) && !r.includes('RAHYAR') && !(r.includes('INSTRUCTOR') && b.kind === 'ONLINE')) throw E(403, 'forbidden', 'اجازهٔ ساخت برنامه ندارید');
   if (!b.title || !b.kind || !b.startsAt || !b.endsAt) throw E(400, 'missing', 'عنوان، نوع، زمان شروع و پایان لازم است'); if (b.endsAt <= b.startsAt) throw E(400, 'bad_time', 'پایان باید بعد از شروع باشد');
   const e: Any = { id: rid(), status: 'DRAFT', cancelReason: null, createdById: u.id, waitlist: true, requiresApproval: false }; evFields.forEach((k) => b[k] !== undefined && (e[k] = b[k] === '' ? null : b[k])); DBV.events.push(e); return e; });
-on('GET', '/manage/events/([^/]+)', (m) => { const e = manageEv(m[1]); const people = DBV.regs.filter((r: Any) => r.eventId === e.id).map((r: Any) => { const p = U(r.userId); return { userId: r.userId, name: nm(r.userId), status: r.status, code: r.code, attendedAt: r.attendedAt, method: r.method, lateCancel: r.lateCancel, feedback: r.feedback, county: DBV.counties.find((c) => c.id === p?.countyId)?.name ?? null, mosque: DBV.mosques.find((x) => x.id === p?.mosqueId)?.name ?? null, byGroup: !!r.byId }; });
-  const fb = people.map((p: Any) => p.feedback?.rating).filter(Boolean); return { event: { ...pubEv(e, null), onlineUrl: e.onlineUrl, description: e.description, agenda: e.agenda, bring: e.bring, mapUrl: e.mapUrl, audienceProvinceId: e.audienceProvinceId, audienceCountyId: e.audienceCountyId, audienceNetworkId: e.audienceNetworkId ?? null, audienceMosqueId: e.audienceMosqueId ?? null, audienceCoreId: e.audienceCoreId ?? null, feeNote: e.feeNote ?? null }, counts: cnt(e.id), rating: fb.length ? +(fb.reduce((a: number, b: number) => a + b, 0) / fb.length).toFixed(1) : null, people }; });
+on('GET', '/manage/events/([^/]+)', (m) => { const e = manageEv(m[1]); const people = DBV.regs.filter((r: Any) => r.eventId === e.id).map((r: Any) => { const p = U(r.userId); return { userId: r.userId, name: nm(r.userId), status: r.status, code: r.code, attendedAt: r.attendedAt, method: r.method, lateCancel: r.lateCancel, feedback: r.feedback ? { rating: r.feedback.rating } : null, county: DBV.counties.find((c) => c.id === p?.countyId)?.name ?? null, mosque: DBV.mosques.find((x) => x.id === p?.mosqueId)?.name ?? null, byGroup: !!r.byId }; });
+  const fb = people.map((p: Any) => p.feedback?.rating).filter(Boolean); return { event: { ...pubEv(e, null), onlineUrl: e.onlineUrl, description: e.description, agenda: e.agenda, bring: e.bring, mapUrl: e.mapUrl, audienceProvinceId: e.audienceProvinceId, audienceCountyId: e.audienceCountyId, audienceNetworkId: e.audienceNetworkId ?? null, audienceMosqueId: e.audienceMosqueId ?? null, audienceCoreId: e.audienceCoreId ?? null, feeNote: e.feeNote ?? null }, counts: cnt(e.id), rating: fb.length ? +(fb.reduce((a: number, b: number) => a + b, 0) / fb.length).toFixed(1) : null, comments: DBV.regs.filter((r: Any) => r.eventId === e.id && r.feedback?.comment).map((r: Any) => r.feedback.comment), people }; });
 on('PATCH', '/manage/events/([^/]+)', (m, b) => { const e = manageEv(m[1]); const old = e.startsAt + e.location; evFields.forEach((k) => b[k] !== undefined && (e[k] = b[k] === '' ? null : b[k]));
   if (e.status === 'PUBLISHED' && old !== e.startsAt + e.location) notify(DBV.regs.filter((r: Any) => r.eventId === e.id && ACTIVE.includes(r.status)).map((r: Any) => r.userId), { kind: 'event_changed', title: `تغییر در «${e.title}»`, link: `/events/${e.id}` }); promote(e); return e; });
 on('DELETE', '/manage/events/([^/]+)', (m) => { const e = manageEv(m[1]); if (e.status !== 'DRAFT') throw E(400, 'not_draft', 'برنامهٔ منتشرشده حذف نمی‌شود؛ لغوش کنید'); DBV.events = DBV.events.filter((x: Any) => x.id !== e.id); return { ok: true }; });

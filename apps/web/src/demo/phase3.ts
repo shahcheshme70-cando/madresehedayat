@@ -4,6 +4,7 @@
  * همان شکل پاسخ‌های apps/api؛ داده در مرورگر.
  */
 import catalog from '../../../api/src/tools/catalog.json';
+import { registerPhase4, seedPhase4 } from './phase4';
 
 type Any = any;
 const TOOLS: Any[] = (catalog as Any).tools;
@@ -78,6 +79,7 @@ export function seedPhase3(db: Any) {
   db.boards.push({ id: 'bd1', ownerId: 'sample3', toolId: 'fish', title: 'چرا نوجوان‌ها به مسجد نمی‌آیند؟', data: { n: { 0: [{ id: 'a', t: 'ساعت برنامه با مدرسه تداخل دارد' }], 1: [{ id: 'b', t: 'کسی نظرشان را نمی‌پرسد' }] }, f: { head: 'کم‌شدن حضور نوجوانان' } }, lessonId: null, publicToken: null, updatedById: 'sample3', createdAt: iso(-3), updatedAt: iso(-1) });
   db.bmembers.push({ boardId: 'bd1', userId: 'sample1', role: 'EDITOR' });
   db.bversions.push({ id: 'bv1', boardId: 'bd1', authorId: 'sample3', data: db.boards[0].data, createdAt: iso(-1) });
+  seedPhase4(db);
   db.access.push({ id: 'ac1', actorId: 'p-cty', action: 'mission.view', subjectId: 'sample3', at: iso(-1) }, { id: 'ac2', actorId: 'p-admin', action: 'user.list', subjectId: null, at: iso(-0.5) });
 }
 
@@ -90,7 +92,7 @@ export function registerPhase3(X: Any) {
   const audit = (action: string, target?: string) => DB().audit.unshift({ id: rid(), actorId: DB().session, action, target: target ?? null, createdAt: now() });
 
   // ── عضویت سازمان
-  const memberIds = (nid: string) => [...new Set([...DB().netMembers.filter((x: Any) => x.networkId === nid).map((x: Any) => x.userId),
+  const memberIds = (nid: string) => [...new Set([...DB().netMembers.filter((x: Any) => x.networkId === nid && x.acceptedAt !== null).map((x: Any) => x.userId),
     ...DB().coreMembers.filter((x: Any) => DB().cores.find((c: Any) => c.id === x.coreId)?.networkId === nid).map((x: Any) => x.userId)])];
   const orgsOfUser = (uid: string) => DB().networks.filter((n: Any) => n.kind === 'ORGANIZATION' && memberIds(n.id).includes(uid)).map((n: Any) => n.id);
   const status = (s: Any) => (s.cancelledAt ? 'CANCELLED' : Date.now() < +new Date(s.startsAt) ? 'UPCOMING' : Date.now() >= +new Date(s.endsAt) ? 'ENDED' : 'ACTIVE');
@@ -136,17 +138,24 @@ export function registerPhase3(X: Any) {
   });
   onFirst('GET', '/org/([^/]+)', (m: Any) => {
     const { net, sub } = orgGate(m[1]); const cids = sub.courseIds;
-    return { id: net.id, name: net.name, underRahyar: net.underRahyar, subscription: summary(net.id), courses: cids.map((id: string) => ({ id, title: DB().courses.find((c: Any) => c.id === id)?.title })),
+    return { id: net.id, name: net.name, underRahyar: net.underRahyar, pendingInvites: DB().netMembers.filter((x: Any) => x.networkId === net.id && x.acceptedAt === null).length, subscription: summary(net.id), courses: cids.map((id: string) => ({ id, title: DB().courses.find((c: Any) => c.id === id)?.title })),
       members: memberIds(net.id).map((uid: string) => ({ id: uid, name: nm(uid), courses: cids.map((cid: string) => { const e = enr(uid, cid); return { courseId: cid, state: e ? (e.completedAt ? 'done' : 'active') : 'none' }; }) })) };
   });
+  // افزودن با شماره = دعوت؛ کاربر در تنظیمات می‌پذیرد (پاسخ نمی‌گوید کدام شماره حساب دارد)
   onFirst('POST', '/org/([^/]+)/members', (m: Any, b: Any) => {
-    const { sub } = orgGate(m[1]); const missing: string[] = []; const found: string[] = [];
-    for (const mob of b.mobiles) { const n = normMobile(mob); const u = n && DB().users.find((x: Any) => x.mobile === n); if (!u) missing.push(mob); else found.push(u.id); }
-    const cur = memberIds(m[1]); const fresh = found.filter((x) => !cur.includes(x));
-    if (cur.length + fresh.length > sub.seats) throw E(400, 'seats_full', `سقف اشتراک پر است: ${faNum(cur.length)} نفر از ${faNum(sub.seats)} نفر. برای افزایش سقف با ستاد هماهنگ کنید`);
-    fresh.forEach((uid) => DB().netMembers.push({ networkId: m[1], userId: uid }));
-    return { added: found.length, missing };
+    orgGate(m[1]); const net = DB().networks.find((n: Any) => n.id === m[1]);
+    const norm = [...new Set(b.mobiles.map((x: string) => normMobile(x)).filter(Boolean))] as string[];
+    const fresh: string[] = [];
+    for (const n of norm) { const u = DB().users.find((x: Any) => x.mobile === n); if (u && !DB().netMembers.some((x: Any) => x.networkId === m[1] && x.userId === u.id)) { DB().netMembers.push({ networkId: m[1], userId: u.id, acceptedAt: null, invitedAt: now() }); fresh.push(u.id); } }
+    notify(fresh, { kind: 'org_invite', title: `«${net?.name}» شما را به اشتراکش دعوت کرده است`, body: 'اگر عضو این سازمان هستید، دعوت را بپذیرید تا دوره‌های اشتراک برایتان باز شود.', link: '/settings#orgs' });
+    return { sent: norm.length, invalid: b.mobiles.length - b.mobiles.filter((x: string) => normMobile(x)).length };
   });
+  on('GET', '/me/orgs', () => { const u = me(); const rows = DB().netMembers.filter((x: Any) => x.userId === u.id);
+    const name = (id: string) => DB().networks.find((n: Any) => n.id === id)?.name;
+    return { invites: rows.filter((x: Any) => x.acceptedAt === null).map((x: Any) => ({ id: x.networkId, name: name(x.networkId), invitedAt: x.invitedAt ?? now() })), member: rows.filter((x: Any) => x.acceptedAt !== null).map((x: Any) => ({ id: x.networkId, name: name(x.networkId) })) }; });
+  on('POST', '/me/orgs/([^/]+)/accept', (m: Any) => { const u = me(); const r = DB().netMembers.find((x: Any) => x.networkId === m[1] && x.userId === u.id); if (!r) throw E(404, 'no_invite', 'دعوتی از این سازمان ندارید');
+    if (r.acceptedAt === null) { const sub = activeSub(m[1]); if (sub && memberIds(m[1]).length >= sub.seats) throw E(400, 'seats_full', 'ظرفیت اشتراک این سازمان پر است؛ به مدیر سازمان خبر بدهید'); r.acceptedAt = now(); } return { ok: true }; });
+  on('POST', '/me/orgs/([^/]+)/leave', (m: Any) => { const u = me(); DB().netMembers = DB().netMembers.filter((x: Any) => !(x.networkId === m[1] && x.userId === u.id)); return { ok: true }; });
 
   // ── برنامه‌ها: برگزارکنندهٔ محدود
   const scopedOptions = (uid: string) => [
@@ -354,7 +363,7 @@ export function registerPhase3(X: Any) {
   on('GET', '/admin/business/quote', (_m: Any, _b: Any, q: Any) => { staff(); const n = Number(q.get('seats')); if (!PLANS[q.get('plan')]) throw E(400, 'bad_plan', 'بسته را انتخاب کنید'); if (!(n >= 1)) throw E(400, 'bad_seats', 'شمار نفرات را بنویسید'); const num = (k: string) => (q.get(k) ? Number(q.get(k)) : undefined); return quote(q.get('plan'), n, num('price'), num('discount'), num('fee')); });
   on('GET', '/admin/business/kpi', () => { staff(); const m = priceModel(DB().costs); const field = new Set(DB().progress.filter((p: Any) => p.completedAt && DB().lessons.find((l: Any) => l.id === p.lessonId)?.type === 'MISSION').map((p: Any) => p.userId)).size; const active = new Set(DB().progress.filter((p: Any) => p.completedAt).map((p: Any) => p.userId)).size;
     const subs = DB().subscriptions.filter((s: Any) => status(s) === 'ACTIVE'); const paid = DB().invoices.filter((i: Any) => i.status === 'PAID');
-    const income = { subscriptions: paid.filter((i: Any) => i.subscriptionId).reduce((a: number, i: Any) => a + i.amount, 0), services: paid.filter((i: Any) => !i.subscriptionId && i.serviceOrderId).reduce((a: number, i: Any) => a + i.amount, 0), sponsors: paid.filter((i: Any) => !i.subscriptionId && !i.serviceOrderId && i.sponsorId).reduce((a: number, i: Any) => a + i.amount, 0) };
+    const income = { subscriptions: paid.filter((i: Any) => i.subscriptionId || (!i.serviceOrderId && !i.sponsorId)).reduce((a: number, i: Any) => a + i.amount, 0), services: paid.filter((i: Any) => !i.subscriptionId && i.serviceOrderId).reduce((a: number, i: Any) => a + i.amount, 0), sponsors: paid.filter((i: Any) => !i.subscriptionId && !i.serviceOrderId && i.sponsorId).reduce((a: number, i: Any) => a + i.amount, 0) };
     const incomeTotal = income.subscriptions + income.services + income.sponsors;
     return { period: 'last365', activeUsers: active, fieldActive: field, costYear: m.total, costPerFieldActive: field ? Math.round(m.total / field) : null, costPerActive: active ? Math.round(m.total / active) : null, perSeat: m.perSeat, orgs: subs.length, seatsSold: subs.reduce((a: number, s: Any) => a + s.seats, 0), year: 1405, income, incomeTotal, hqShare: Math.max(0, m.total - incomeTotal) }; });
   const subRow = (s: Any) => { const inv = DB().invoices.filter((i: Any) => i.subscriptionId === s.id); return { ...s, org: DB().networks.find((n: Any) => n.id === s.networkId)?.name, status: status(s), used: memberIds(s.networkId).length, courses: s.courseIds.map((id: string) => ({ id, title: DB().courses.find((c: Any) => c.id === id)?.title })), invoiced: inv.filter((i: Any) => i.status !== 'VOID').reduce((a: number, i: Any) => a + i.amount, 0), paid: inv.filter((i: Any) => i.status === 'PAID').reduce((a: number, i: Any) => a + i.amount, 0) }; };
@@ -430,5 +439,6 @@ export function registerPhase3(X: Any) {
       ...DB().lratings.filter((r: Any) => r.comment).map((r: Any) => ({ kind: 'lesson', title: DB().lessons.find((l: Any) => l.id === r.lessonId)?.title, comment: r.comment, score: r.up ? 1 : 0, at: r.updatedAt }))].sort((a, b) => b.at.localeCompare(a.at));
     return { courses, lessons, comments }; });
   onFirst('POST', '/uploads/mission', (_m: Any, _b: Any, q: Any) => { if (q.get('kind') === 'feedback') throw E(400, 'demo', 'در نسخهٔ نمایشی بارگذاری عکس خاموش است'); return { key: 'demo-' + rid() }; });
+  registerPhase4(X, { orgGate, memberIds, orgsOfUser });
   void card;
 }

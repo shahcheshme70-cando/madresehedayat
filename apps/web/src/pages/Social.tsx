@@ -312,7 +312,7 @@ export function ImamPage() {
 }
 
 // ───────── سازمان مشترک ─────────
-interface OrgFull { id: string; name: string; underRahyar: boolean; subscription: OrgSub; courses: { id: string; title: string }[]; members: { id: string; name: string; courses: { courseId: string; state: 'done' | 'active' | 'none' }[] }[] }
+interface OrgFull { id: string; name: string; underRahyar: boolean; pendingInvites?: number; subscription: OrgSub; courses: { id: string; title: string }[]; members: { id: string; name: string; courses: { courseId: string; state: 'done' | 'active' | 'none' }[] }[] }
 
 export function OrgList() {
   const q = useQuery({ queryKey: ['orgs'], queryFn: () => api<{ id: string; name: string; subscription: OrgSub }[]>('/org') });
@@ -337,9 +337,9 @@ export function OrgPage() {
   const [tab, setTab] = useState<'members' | 'report' | 'plans'>('members');
   const [add, setAdd] = useState(false);
   const [list, setList] = useState('');
-  const [res, setRes] = useState<{ added: number; missing: string[] } | null>(null);
+  const [res, setRes] = useState<{ sent: number; invalid: number } | null>(null);
   const addM = useMutation({
-    mutationFn: () => api<{ added: number; missing: string[] }>(`/org/${id}/members`, { body: { mobiles: list.split(/[\s,،]+/).filter(Boolean) } }),
+    mutationFn: () => api<{ sent: number; invalid: number }>(`/org/${id}/members`, { body: { mobiles: list.split(/[\s,،]+/).filter(Boolean) } }),
     onSuccess: (r) => { setRes(r); qc.invalidateQueries({ queryKey: ['org', id] }); },
     onError: (e) => toast((e as Error).message, 'err'),
   });
@@ -357,7 +357,7 @@ export function OrgPage() {
   const st = { done: ['chip-leaf', 'تمام'], active: ['chip-flame', 'در حال گذراندن'], none: ['', 'شروع نکرده'] } as const;
   return (
     <div className="rise grid gap-6">
-      <Title t={o.name} d={`${fa(o.members.length)} عضو · ${fa(o.courses.length)} دوره در اشتراک${o.underRahyar ? ' · زیر پوشش شبکهٔ راهیاری' : ''}`}>
+      <Title t={o.name} d={`${fa(o.members.length)} عضو${o.pendingInvites ? ` · ${fa(o.pendingInvites)} دعوت در انتظار پاسخ` : ''} · ${fa(o.courses.length)} دوره در اشتراک${o.underRahyar ? ' · زیر پوشش شبکهٔ راهیاری' : ''}`}>
         <button className="btn btn-primary" onClick={() => { setAdd(true); setRes(null); setList(''); }}><Plus className="size-4" />افزودن عضو</button>
       </Title>
       <OrgSubscriptionCard s={o.subscription} orgId={id} />
@@ -378,21 +378,22 @@ export function OrgPage() {
               ))}</tbody>
             </table>
           </div>
-        ) : <Empty icon={UsersRound} title="هنوز عضوی اضافه نشده">شمارهٔ همراه کسانی را که در مدرسه حساب دارند وارد کنید.</Empty>}
+        ) : <Empty icon={UsersRound} title="هنوز عضوی نپیوسته">شمارهٔ همراه اعضای سازمان را بفرستید؛ هر کدام دعوت را بپذیرد، این‌جا می‌آید.</Empty>}
       </section>}
       <p className="hint">شما فقط پیشرفت دوره‌های همین اشتراک را می‌بینید؛ متن گزارش‌ها و یادداشت‌های اعضا خصوصی است. قرارداد و پرداخت با ستاد مدرسه است.</p>
-      <Dialog open={add} onClose={() => setAdd(false)} title="افزودن عضو با شمارهٔ همراه">
+      <Dialog open={add} onClose={() => setAdd(false)} title="دعوت اعضا با شمارهٔ همراه">
         {res ? (
           <div className="grid gap-3">
-            <p className="text-ink">{fa(res.added)} نفر اضافه شدند.</p>
-            {res.missing.length > 0 && <div className="rounded-xl bg-flame-soft p-3 text-sm"><b className="text-flame-ink">این شماره‌ها هنوز در مدرسه ثبت‌نام نکرده‌اند:</b><p dir="ltr" className="tnum mt-1 text-end">{res.missing.join('، ')}</p><p className="mt-1 text-body">از آن‌ها بخواهید ثبت‌نام کنند و دوباره اضافه‌شان کنید.</p></div>}
+            <p className="text-ink">برای {fa(res.sent)} شماره دعوت فرستاده شد.</p>
+            <p className="text-sm text-body">هر کس در مدرسه حساب داشته باشد، دعوت را در اعلان‌ها می‌بیند و با پذیرفتنش عضو اشتراک می‌شود. کسی که هنوز حساب ندارد، اول با پیوند دعوت هسته یا از صفحهٔ ورود ثبت‌نام کند، بعد دوباره شماره‌اش را بفرستید.</p>
+            {res.invalid > 0 && <p className="rounded-xl bg-flame-soft p-3 text-sm text-flame-ink">{fa(res.invalid)} شماره درست نبود (باید ۱۱ رقم و با ۰۹ باشد).</p>}
             <button className="btn btn-primary" onClick={() => setAdd(false)}>بستن</button>
           </div>
         ) : (
           <div className="grid gap-3">
             <textarea className="input ltr min-h-40" dir="ltr" placeholder={'09121234567\n09351234567'} value={list} onChange={(e) => setList(e.target.value)} />
             <p className="hint">هر شماره در یک خط یا با ویرگول جدا.</p>
-            <button className="btn btn-primary" disabled={!list.trim() || addM.isPending} onClick={() => addM.mutate()}>افزودن</button>
+            <button className="btn btn-primary" disabled={!list.trim() || addM.isPending} onClick={() => addM.mutate()}>فرستادن دعوت</button>
           </div>
         )}
       </Dialog>

@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, gte, inArray, lte, ne, sql } from 'drizzle-orm';
 import { randomInt } from 'node:crypto';
+import { dec, enc } from '../common/crypto';
+import { csvCell } from '../common/csv';
 import { AuthUser } from '../common/auth.decorators';
 import { Db, InjectDb } from '../db/db.module';
 import { pgArr } from '../db/id';
@@ -70,9 +72,10 @@ export class EventsService {
     const scoped = [v.audienceNetworkId, v.audienceMosqueId, v.audienceCoreId].filter(Boolean);
     if (scoped.length > 1) throw new BadRequestException({ code: 'bad_audience', message: 'مخاطب برنامه فقط یکی از این‌ها است: سازمان، مسجد یا هسته' });
     if (this.canCreate(u, v.kind ?? undefined) && !scoped.length) return;
-    if (creating && !scoped.length) {
+    // بی‌مخاطب ویژه = برنامهٔ عمومی؛ فقط کسی که اجازهٔ برنامهٔ عمومی دارد (هم در ساختن، هم در ویرایش)
+    if (!scoped.length) {
       const opts = await this.scopedOptions(u);
-      throw new ForbiddenException({ code: 'forbidden', message: opts.length ? 'مخاطب برنامه را انتخاب کنید: اعضای سازمان، مسجد یا هستهٔ خودتان' : 'اجازهٔ ساخت برنامه ندارید' });
+      throw new ForbiddenException({ code: 'forbidden', message: opts.length ? 'مخاطب برنامه را انتخاب کنید: اعضای سازمان، مسجد یا هستهٔ خودتان' : creating ? 'اجازهٔ ساخت برنامه ندارید' : 'اجازهٔ برنامهٔ عمومی ندارید؛ مخاطب برنامه باید ویژه بماند' });
     }
     if (v.audienceNetworkId) await this.business.orgGate(u, v.audienceNetworkId, 'events');
     await this.assertLiveHours(v);
@@ -132,7 +135,7 @@ export class EventsService {
       audienceGender: e.audienceGender, status: e.status, cancelReason: e.cancelReason, courseId: e.courseId, feeNote: e.feeNote,
       scoped: e.audienceNetworkId ? 'ORG' : e.audienceMosqueId ? 'MOSQUE' : e.audienceCoreId ? 'CORE' : null, useBbb: e.useBbb, record: e.useBbb && e.record,
       registered: c?.registered ?? 0,
-      my: mine && mine.status !== 'CANCELLED' && mine.status !== 'REJECTED' ? { status: mine.status, checkInCode: mine.status === 'REGISTERED' ? mine.checkInCode : null, attendedAt: mine.attendedAt, feedback: mine.feedback } : mine ? { status: mine.status } : null,
+      my: mine && mine.status !== 'CANCELLED' && mine.status !== 'REJECTED' ? { status: mine.status, checkInCode: mine.status === 'REGISTERED' ? mine.checkInCode : null, attendedAt: mine.attendedAt, feedback: mine.feedback ? { rating: (mine.feedback as any).rating, comment: dec((mine.feedback as any).comment) } : null } : mine ? { status: mine.status } : null,
     };
     if (full) Object.assign(out, {
       description: e.description, agenda: e.agenda, bring: e.bring, mapUrl: e.mapUrl,
@@ -268,7 +271,9 @@ export class EventsService {
     const r = await this.db.query.registrations.findFirst({ where: and(eq(registrations.eventId, id), eq(registrations.userId, u.id)) });
     if (!r?.attendedAt) throw new BadRequestException({ code: 'not_attended', message: 'نظر را شرکت‌کنندگان می‌دهند' });
     const rating = Math.max(1, Math.min(5, Math.round(fb.rating)));
-    await this.db.update(registrations).set({ feedback: { rating, comment: (fb.comment ?? '').slice(0, 1000) } }).where(and(eq(registrations.eventId, id), eq(registrations.userId, u.id)));
+    // نظر متنی دادهٔ قرمز است: رمزگذاری می‌شود و به برگزارکننده بی‌نام نشان داده می‌شود
+    const comment = (fb.comment ?? '').trim().slice(0, 1000);
+    await this.db.update(registrations).set({ feedback: { rating, comment: comment ? enc(comment) : null } }).where(and(eq(registrations.eventId, id), eq(registrations.userId, u.id)));
     return { ok: true };
   }
 
@@ -322,8 +327,10 @@ export class EventsService {
     const e = await this.manageable(u, id);
     const v = this.clean(u, d, false);
     await this.assertScope(u, { ...e, ...v, id: e.id } as any, false);
+    // زمان‌ها پیش از ذخیره بررسی می‌شوند (پایان پیش از شروع، مدت منفی برای کلاس زنده می‌سازد)
+    const s0 = v.startsAt ?? e.startsAt, e0 = v.endsAt ?? e.endsAt;
+    if (e0 <= s0) throw new BadRequestException({ code: 'bad_time', message: 'پایان باید بعد از شروع باشد' });
     const [n] = await this.db.update(events).set({ ...v, updatedAt: new Date() }).where(eq(events.id, id)).returning();
-    if (n.endsAt <= n.startsAt) throw new BadRequestException({ code: 'bad_time', message: 'پایان باید بعد از شروع باشد' });
     const timeChanged = (v.startsAt && v.startsAt.getTime() !== e.startsAt.getTime()) || (v.location !== undefined && v.location !== e.location);
     if (e.status === 'PUBLISHED' && (timeChanged || d.notify)) {
       await this.notify.send(await this.attendees(id), { kind: 'event_changed', title: `تغییر در «${n.title}»`, body: `${faDate(n.startsAt)}${n.location ? ' — ' + n.location : ''}`, link: `/events/${id}` });
@@ -377,8 +384,11 @@ export class EventsService {
       where r.event_id = ${id} order by r.created_at`);
     const cs = (await this.counts([id])).get(id) ?? { registered: 0, waitlist: 0, pending: 0, attended: 0 };
     const fb = rows.rows.map((r: any) => r.feedback?.rating).filter(Boolean);
+    // نظرهای متنی جدا و بی‌نام، به ترتیب تصادفی (تا از جای ردیف نشود فهمید مال کیست)
+    const comments = rows.rows.map((r: any) => dec(r.feedback?.comment)).filter(Boolean).sort(() => Math.random() - 0.5);
+    for (const r of rows.rows as any[]) if (r.feedback) r.feedback = { rating: r.feedback.rating };
     return { event: { ...this.pub(e, cs), onlineUrl: e.onlineUrl, description: e.description, agenda: e.agenda, bring: e.bring, mapUrl: e.mapUrl, audienceProvinceId: e.audienceProvinceId, audienceCountyId: e.audienceCountyId, audienceNetworkId: e.audienceNetworkId, audienceMosqueId: e.audienceMosqueId, audienceCoreId: e.audienceCoreId },
-      counts: cs, rating: fb.length ? +(fb.reduce((a: number, b: number) => a + b, 0) / fb.length).toFixed(1) : null,
+      counts: cs, comments, rating: fb.length ? +(fb.reduce((a: number, b: number) => a + b, 0) / fb.length).toFixed(1) : null,
       people: e.useBbb ? await this.live.attendanceMap(id).then((m) => rows.rows.map((r: any) => ({ ...r, liveMinutes: m.get(r.userId) ?? 0 }))) : rows.rows };
   }
 
@@ -440,7 +450,7 @@ export class EventsService {
   async csv(u: AuthUser, id: string) {
     const { people, event } = await this.registrants(u, id);
     const st: Record<string, string> = { REGISTERED: 'ثبت‌نام', WAITLIST: 'انتظار', PENDING: 'منتظر تأیید', REJECTED: 'رد شده', CANCELLED: 'انصراف' };
-    const q = (s: unknown) => `"${String(s ?? '').replace(/"/g, '""')}"`;
+    const q = csvCell;
     const lines = [['نام', 'شهرستان', 'مسجد', 'وضعیت', 'حضور', 'روش', 'انصراف دیرهنگام', 'امتیاز'].map(q).join(',')];
     for (const p of people) lines.push([p.name, p.county, p.mosque, st[p.status], p.attendedAt ? 'بله' : 'خیر', p.method, p.lateCancel ? 'بله' : '', p.feedback?.rating].map(q).join(','));
     return { name: `${String((event as any).title).slice(0, 40)}.csv`, body: '﻿' + lines.join('\r\n') };

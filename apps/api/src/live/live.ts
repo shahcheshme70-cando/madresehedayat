@@ -103,6 +103,8 @@ export class LiveService {
   async join(u: AuthUser, e: typeof events.$inferSelect) {
     if (!bbbEnabled()) throw new BadRequestException(err('bbb_off', 'سرور کلاس زنده هنوز راه نیفتاده است؛ برگزارکننده پیوند بیرونی بگذارد'));
     const host = this.isHost(u, e);
+    if (e.status === 'CANCELLED') throw new BadRequestException(err('cancelled', 'این کلاس لغو شده است'));
+    if (!host && e.status !== 'PUBLISHED') throw new BadRequestException(err('not_published', 'این کلاس هنوز منتشر نشده است'));
     if (!host) {
       const r = await this.db.query.registrations.findFirst({ where: and(eq(registrations.eventId, e.id), eq(registrations.userId, u.id)) });
       if (r?.status !== 'REGISTERED') throw new ForbiddenException(err('not_registered', 'اول در این برنامه ثبت‌نام کنید'));

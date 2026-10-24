@@ -23,7 +23,6 @@ export const bbbEnabled = () => !!config.bbbUrl && !!config.bbbSecret;
  */
 @Injectable()
 export class BbbClient {
-  private readonly log = new Logger('BBB');
 
   private sign(call: string, query: string) {
     return createHash(config.bbbChecksum).update(call + query + config.bbbSecret).digest('hex');

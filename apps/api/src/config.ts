@@ -9,7 +9,6 @@ export const config = {
   port: Number(env('PORT', '3000')),
   nodeEnv: env('NODE_ENV', 'development'),
   databaseUrl: env('DATABASE_URL', 'postgresql://madrese:madrese@localhost:5432/madrese'),
-  redisUrl: env('REDIS_URL', 'redis://localhost:6379'),
   jwtSecret: env('JWT_SECRET', 'dev-only-change-me'),
   otpSecret: env('OTP_SECRET', 'dev-only-otp-secret'),
   accessTtlSec: Number(env('ACCESS_TTL_SEC', String(15 * 60))),

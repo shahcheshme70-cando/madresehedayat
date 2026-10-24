@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Header, HttpCode, Injectable, Logger, On
 import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 import type { Response } from 'express';
 import { inArray } from 'drizzle-orm';
-import { AuthUser, CurrentUser, Roles } from '../common/auth.decorators';
+import { AuthUser, CurrentUser } from '../common/auth.decorators';
 import { Db, InjectDb } from '../db/db.module';
 import { AccessLog } from '../security/security';
 import { privateFiles } from '../db/schema';

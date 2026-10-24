@@ -4,7 +4,7 @@ import { and, count, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { AuthUser, CurrentUser, Roles } from '../common/auth.decorators';
 import { dec, enc } from '../common/crypto';
 import { Db, InjectDb } from '../db/db.module';
-import { auditLogs, courseRatings, courses, enrollments, feedback, lessonRatings, lessons, modules, privateFiles, roleGrants, users } from '../db/schema';
+import { auditLogs, courseRatings, courses, enrollments, feedback, lessonRatings, lessons, modules, privateFiles, users } from '../db/schema';
 import { Notifier } from '../notifications/notifications';
 
 const err = (code: string, message: string) => ({ code, message });

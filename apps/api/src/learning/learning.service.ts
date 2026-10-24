@@ -1,3 +1,4 @@
+import { isUnique } from '../common/errors';
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { randomInt } from 'node:crypto';
@@ -315,7 +316,7 @@ export class LearningService {
       try {
         await this.db.insert(certificates).values({ code, userId, courseId: c.id, holderName: `${u.firstName} ${u.lastName}`, courseTitle: c.title, score: final, orgName: await this.business.certOrgName(userId, c.id) });
         return { code };
-      } catch (e: any) { if (e?.code !== '23505') throw e; }
+      } catch (e: any) { if (!isUnique(e)) throw e; }
     }
     throw new Error('certificate_code_collision');
   }
@@ -367,7 +368,7 @@ export class LearningService {
         for (let i = 0; i < 5 && !certificate; i++) {
           const code = 'HD-' + this.rand(4) + '-' + this.rand(4);
           try { await this.db.insert(certificates).values({ code, userId, pathId: p.id, holderName: `${u.firstName} ${u.lastName}`, courseTitle: `مسیر «${p.title}»`, score, orgName: await this.business.certOrgName(userId, null) }); certificate = { code }; }
-          catch (e: any) { if (e?.code !== '23505') throw e; }
+          catch (e: any) { if (!isUnique(e)) throw e; }
         }
       }
     }

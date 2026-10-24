@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsObject, IsOptional, IsString, Length, MaxLength } from 'class-validator';
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { AuthUser, CurrentUser, Roles } from '../common/auth.decorators';
 import { Db, InjectDb } from '../db/db.module';
 import { AccessLog } from '../security/security';

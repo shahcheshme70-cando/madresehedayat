@@ -4,7 +4,7 @@ import { randomInt } from 'node:crypto';
 import { AuthUser } from '../common/auth.decorators';
 import { Db, InjectDb } from '../db/db.module';
 import { pgArr } from '../db/id';
-import { coreMemberships, cores, eventReminders, events, mosques, networks, registrations, roleGrants, users } from '../db/schema';
+import { coreMemberships, cores, eventReminders, events, mosques, registrations, roleGrants, users } from '../db/schema';
 import { Business } from '../business/business';
 import { bbbEnabled, LiveService } from '../live/live';
 import { jalaliNow, tehranStart } from '../common/jalali';

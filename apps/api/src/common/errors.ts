@@ -103,6 +103,11 @@ const BY_STATUS: Record<number, [string, string]> = {
 };
 
 /* ───────── خطاهای پایگاه داده (کدهای Postgres) ───────── */
+/** drizzle خطای Postgres را در cause می‌پیچد؛ کد اصلی را از هر لایه بیرون می‌کشد */
+export const pgCode = (e: any): string | undefined => [e, e?.cause, e?.cause?.cause].find((x) => x && typeof x.code === 'string' && /^[0-9A-Z]{5}$/.test(x.code))?.code;
+/** خطای «تکراری» (unique) — برای کارهایی که هم‌زمانی را با تلاش دوباره حل می‌کنند */
+export const isUnique = (e: unknown) => pgCode(e) === '23505';
+
 function pgError(e: any): { status: number; code: string; message: string } | null {
   const pg = [e, e?.cause, e?.cause?.cause].find((x) => x && typeof x.code === 'string' && /^[0-9A-Z]{5}$/.test(x.code));
   if (pg) {

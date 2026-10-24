@@ -15,6 +15,7 @@
     "baseUrl": "./",
     "skipLibCheck": true,
     "strict": true,
+    "noUnusedLocals": true,
     "strictPropertyInitialization": false,
     "noFallthroughCasesInSwitch": true,
     "resolveJsonModule": true

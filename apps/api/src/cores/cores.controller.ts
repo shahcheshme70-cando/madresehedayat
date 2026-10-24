@@ -6,7 +6,7 @@ import { AuthUser, CurrentUser } from '../common/auth.decorators';
 import { normalizeMobile } from '../common/mobile';
 import { Db, InjectDb } from '../db/db.module';
 import { AccessLog } from '../security/security';
-import { dec, mobileKey } from '../common/crypto';
+import { mobileKey } from '../common/crypto';
 import { pgArr } from '../db/id';
 import { coreMemberships, cores, mosques, networkMembers, networks, roleGrants, users } from '../db/schema';
 import { Notifier } from '../notifications/notifications';

@@ -1,14 +1,15 @@
-import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpCode, Injectable, Logger, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpCode, Injectable, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Length, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsObject, IsOptional, IsString, Length, Max, Min, ValidateNested } from 'class-validator';
 import { and, asc, count, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, sql } from 'drizzle-orm';
 import type { Response } from 'express';
 import { AuthUser, CurrentUser, Roles } from '../common/auth.decorators';
+import { isUnique } from '../common/errors';
 import { jalaliNow, jalaliQuarter, tehranStart } from '../common/jalali';
 import { Db, InjectDb } from '../db/db.module';
 import { pgArr } from '../db/id';
 import {
-  auditLogs, campaignDone, coreMemberships, cores, courses, enrollments, invoices, kv, lessonProgress, lessons, networkMembers, networks,
+  auditLogs, coreMemberships, cores, courses, enrollments, invoices, kv, networkMembers, networks,
   roleGrants, serviceOrders, sponsors, subscriptionCourses, subscriptions, users,
 } from '../db/schema';
 import { Notifier } from '../notifications/notifications';
@@ -67,7 +68,6 @@ type SubRow = typeof subscriptions.$inferSelect;
 /** مدل کسب‌وکار: اشتراک سازمان‌ها، حامیان، خدمات سفارشی، فاکتورها، قیمت‌گذاری و سنجه‌ها */
 @Injectable()
 export class Business {
-  private readonly log = new Logger('Business');
   constructor(@InjectDb() private readonly db: Db, private readonly notify: Notifier) {}
 
   // ───────── هزینه و قیمت ─────────
@@ -322,7 +322,7 @@ export class Business {
       await this.db.update(subscriptions).set({ remindedAt: r }).where(eq(subscriptions.id, s.id));
       const body = key === 'ended' ? 'دوره‌های ویژه و پنل سازمان بسته شد. پرونده، پیشرفت و گواهی اعضا پاک نمی‌شود و با تمدید برمی‌گردد.' : 'برای تمدید با ستاد مدرسه هماهنگ کنید؛ پس از پایان، دوره‌های ویژه و پنل سازمان بسته می‌شود.';
       await this.notifyAdmins(s.networkId, { kind: 'subscription', title, body, link: '/org' });
-      await this.notify.send(hq, { kind: 'subscription', title, body: `${fmt(s.seats)} نفر، ${PLANS[s.plan as Plan].label}`, link: '/admin/subscriptions' });
+      await this.notify.send(hq, { kind: 'subscription', title, body: `${fmt(s.seats)} نفر، ${PLANS[s.plan as Plan].label}`, link: '/admin/business/subscriptions' });
     }
   }
 
@@ -348,7 +348,7 @@ export class Business {
           title: d.title.trim(), amount: d.amount, createdById: u.id }).returning();
         await this.db.insert(auditLogs).values({ actorId: u.id, action: 'invoice.create', target: inv.id, meta: { number: inv.number, amount: inv.amount } });
         return inv;
-      } catch (e: any) { if (!String(e?.message).includes('unique')) throw e; }
+      } catch (e) { if (!isUnique(e)) throw e; }
     }
     throw new BadRequestException(err('retry', 'شمارهٔ فاکتور تکراری شد؛ دوباره بزنید'));
   }

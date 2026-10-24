@@ -20,7 +20,6 @@
     "class-validator": "0.14.2",
     "cookie-parser": "1.4.7",
     "helmet": "8.1.0",
-    "ioredis": "5.7.0",
     "minio": "8.0.5",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
@@ -32,7 +31,6 @@
     "@types/cookie-parser": "1.4.9",
     "@types/express": "5.0.3",
     "@types/node": "22.18.0",
-    "ts-node": "10.9.2",
     "typescript": "5.9.2",
     "drizzle-kit": "0.31.10",
     "@types/pg": "8.15.5"

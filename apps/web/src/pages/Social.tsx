@@ -270,6 +270,7 @@ export function ImamPage() {
     onSuccess: (c) => { qc.invalidateQueries({ queryKey: ['imam'] }); setMake(null); setName(''); toast('هسته ساخته شد'); nav(`/cores/${c.id}`); },
     onError: (e) => toast((e as Error).message, 'err'),
   });
+  const regen = useMutation({ mutationFn: (mosqueId: string) => api(`/imam/mosques/${mosqueId}/invite`, { method: 'POST' }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['imam'] }); toast('پیوند تازه ساخته شد؛ پیوند قبلی دیگر کار نمی‌کند'); } });
   if (q.isLoading) return <Spinner />;
   if (q.error) return <ErrorBox error={q.error} />;
   return (
@@ -287,7 +288,8 @@ export function ImamPage() {
           <div className="card grid gap-2 p-5">
             <b className="flex items-center gap-2 text-ink"><Link2 className="size-5 text-leaf" />پیوند دعوت مسجد</b>
             <p className="text-sm text-muted">برای کسانی که هنوز در هسته‌ای نیستند. با این پیوند به مسجد وصل می‌شوند و در فهرست «اعضای آزاد» می‌آیند.</p>
-            <div className="flex flex-wrap items-center gap-2"><code dir="ltr" className="max-w-full truncate rounded-lg bg-sunken px-3 py-2 text-sm">{inviteUrl(m.inviteCode)}</code><CopyButton text={inviteUrl(m.inviteCode)} label="کپی پیوند" /></div>
+            <div className="flex flex-wrap items-center gap-2"><code dir="ltr" className="max-w-full truncate rounded-lg bg-sunken px-3 py-2 text-sm">{inviteUrl(m.inviteCode)}</code><CopyButton text={inviteUrl(m.inviteCode)} label="کپی پیوند" />
+              <button className="btn btn-ghost btn-sm" disabled={regen.isPending} onClick={() => regen.mutate(m.id)}><RefreshCw className="size-4" />پیوند تازه</button></div>
           </div>
           {m.cores.map((c) => (
             <div key={c.id} className="card p-5">

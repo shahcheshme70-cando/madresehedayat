@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { CourseIcon, Dialog, ErrorBox, ICONS, LESSON_ICON, Spinner, useToast } from '../../components/ui';
 import { api, ApiError } from '../../lib/api';
 import { useTools } from '../Tools';
-import { fa, LESSON_LABEL, minutes, STATUS_LABEL } from '../../lib/fa';
+import { fa, jDate, LESSON_LABEL, minutes, STATUS_LABEL } from '../../lib/fa';
 import type { LessonType } from '../../lib/types';
 import type { AdminCourse } from './Courses';
 import { STATUS_CHIP } from './Courses';
@@ -19,7 +19,7 @@ interface FullCourse extends AdminCourse {
 }
 
 const COLORS = [['green', 'سبز'], ['dome', 'فیروزه‌ای'], ['deep', 'آبی'], ['flame', 'زرد'], ['rose', 'سرخ']];
-const TYPES: LessonType[] = ['TEXT', 'VIDEO', 'AUDIO', 'QUIZ', 'WORKSHEET', 'MISSION', 'TOOL'];
+const TYPES: LessonType[] = ['TEXT', 'VIDEO', 'AUDIO', 'QUIZ', 'WORKSHEET', 'MISSION', 'TOOL', 'LIVE'];
 
 export default function CourseEditor() {
   const { id } = useParams();
@@ -286,8 +286,22 @@ function ContentEditor({ type, c, set }: { type: LessonType; c: any; set: (c: an
     );
     case 'QUIZ': return <QuizBuilder c={c} set={set} />;
     case 'TOOL': return <ToolPick c={c} set={set} />;
+    case 'LIVE': return <LivePick c={c} set={set} />;
     default: return <p className="text-muted">ویرایشگر این نوع درس در مرحلهٔ بعد ساخته می‌شود.</p>;
   }
+}
+
+function LivePick({ c, set }: { c: any; set: (c: any) => void }) {
+  const evs = useQuery({ queryKey: ['manage-events'], queryFn: () => api<{ id: string; title: string; kind: string; startsAt: string; status: string; useBbb?: boolean }[]>('/manage/events') });
+  const online = (evs.data ?? []).filter((e) => e.kind === 'ONLINE' && e.status !== 'CANCELLED');
+  return (
+    <div className="grid gap-2">
+      <div className="field"><label htmlFor="lv">برنامهٔ آنلاین</label>
+        <select id="lv" className="input" value={c.eventId ?? ''} onChange={(e) => set({ ...c, eventId: e.target.value })}><option value="">انتخاب کنید</option>
+          {online.map((e) => <option key={e.id} value={e.id}>{e.title} — {jDate(e.startsAt)}{e.useBbb ? '' : ' (پیوند بیرونی)'}{e.status === 'DRAFT' ? ' (پیش‌نویس)' : ''}</option>)}</select></div>
+      <p className="hint">اول برنامهٔ آنلاین را در «برنامه‌ها» بسازید. یادگیرنده از همین درس ثبت‌نام و وارد کلاس می‌شود؛ با حضور دست‌کم نیمی از زمان یا دیدن ضبط، درس تمام می‌شود. برای سنجش حضور، «کلاس روی سرور مدرسه» را انتخاب کنید.</p>
+    </div>
+  );
 }
 
 function ToolPick({ c, set }: { c: any; set: (c: any) => void }) {

@@ -1,5 +1,5 @@
 export type Role = 'HQ_ADMIN' | 'HQ_OPERATOR' | 'INSTRUCTOR' | 'RAHYAR' | 'IMAM' | 'ORG_ADMIN';
-export type LessonType = 'VIDEO' | 'AUDIO' | 'TEXT' | 'QUIZ' | 'PRACTICE' | 'WORKSHEET' | 'MISSION' | 'TOOL';
+export type LessonType = 'VIDEO' | 'AUDIO' | 'TEXT' | 'QUIZ' | 'PRACTICE' | 'WORKSHEET' | 'MISSION' | 'TOOL' | 'LIVE';
 
 export interface Me {
   id: string; mobile: string; firstName: string; lastName: string; gender: 'MALE' | 'FEMALE' | null;
@@ -15,7 +15,7 @@ export interface EventCard {
   id: string; title: string; kind: 'ONLINE' | 'IN_PERSON'; startsAt: string; endsAt: string; location: string | null; hostName: string | null;
   capacity: number | null; seatsLeft: number | null; waitlist: boolean; requiresApproval: boolean; registrationDeadline: string | null;
   audienceGender: 'MALE' | 'FEMALE' | null; status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED'; cancelReason: string | null; registered: number;
-  feeNote: string | null; scoped: 'ORG' | 'MOSQUE' | 'CORE' | null;
+  feeNote: string | null; scoped: 'ORG' | 'MOSQUE' | 'CORE' | null; useBbb?: boolean; record?: boolean;
   my: { status: RegStatus; checkInCode?: string | null; attendedAt?: string | null; feedback?: { rating: number; comment?: string } | null } | null;
 }
 export interface EventDetail extends EventCard {

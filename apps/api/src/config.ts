@@ -15,6 +15,10 @@ export const config = {
   accessTtlSec: Number(env('ACCESS_TTL_SEC', String(15 * 60))),
   // نشست کنشگر ۹۰ روز تا پیامک ورود کمتر شود (مدل کسب‌وکار ۱۶)؛ کارکنان ستاد ۳۰ روز و رمز دوم هر ۱۲ ساعت
   refreshTtlDays: Number(env('REFRESH_TTL_DAYS', '90')),
+  // کلاس زنده: نشانی API سرور BigBlueButton (…/bigbluebutton/api) و رمز مشترکش (bbb-conf --secret)
+  bbbUrl: env('BBB_URL', '').replace(/\/$/, ''),
+  bbbSecret: env('BBB_SECRET', ''),
+  bbbChecksum: env('BBB_CHECKSUM', 'sha1') as 'sha1' | 'sha256',
   staffRefreshTtlDays: Number(env('STAFF_REFRESH_TTL_DAYS', '30')),
   cookieSecure: env('COOKIE_SECURE', 'false') === 'true',
   /** console = کد در لاگ نوشته می‌شود (توسعه)؛ kavenegar = ارسال واقعی */

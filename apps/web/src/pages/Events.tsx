@@ -7,7 +7,7 @@ import { Dialog, Empty, ErrorBox, Spinner, useToast } from '../components/ui';
 import { useFeedbackContext } from '../components/Feedback';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { fa, jDateTime, jTime, REG_LABEL } from '../lib/fa';
+import { fa, jDate, jDateTime, jTime, REG_LABEL } from '../lib/fa';
 import type { EventCard, EventDetail } from '../lib/types';
 
 type Scope = 'upcoming' | 'mine' | 'past';
@@ -140,6 +140,7 @@ export function EventPage() {
           {e.description && <section><h2 className="mb-2 font-extrabold">دربارهٔ برنامه</h2><p className="prose-fa whitespace-pre-line">{e.description}</p></section>}
           {e.agenda && <section><h2 className="mb-2 font-extrabold">برنامهٔ جلسه</h2><p className="prose-fa whitespace-pre-line">{e.agenda}</p></section>}
           {e.bring && <section className="rounded-2xl bg-flame-soft p-4"><b className="text-flame-ink">همراه بیاورید: </b><span className="text-ink">{e.bring}</span></section>}
+          {e.useBbb && <LiveSection eventId={e.id} ended={ended} />}
           {e.feeNote && <section className="rounded-2xl bg-sunken p-4"><b className="text-ink">هزینهٔ شرکت: </b><span>{e.feeNote}</span><p className="hint mt-1">پرداخت با برگزارکننده است؛ مدرسه پولی دریافت نمی‌کند.</p></section>}
         </div>
 
@@ -152,7 +153,8 @@ export function EventPage() {
                 {e.kind === 'ONLINE' && !ended && (e.onlineSoon
                   ? <button className="btn btn-primary" onClick={() => join.mutate()} disabled={join.isPending}><MonitorPlay className="size-4" />ورود به کلاس</button>
                   : <p className="hint">پیوند کلاس هنوز گذاشته نشده.</p>)}
-                {e.kind === 'ONLINE' && <p className="hint">پیوند کلاس از یک ساعت پیش از شروع باز می‌شود و ورودتان حضور حساب می‌شود.</p>}
+                {e.kind === 'ONLINE' && <p className="hint">{e.useBbb ? 'کلاس از ۱۵ دقیقه پیش از شروع باز می‌شود. اگر دست‌کم نیمی از زمان کلاس حاضر باشید، حضورتان ثبت می‌شود.' : 'پیوند کلاس از یک ساعت پیش از شروع باز می‌شود و ورودتان حضور حساب می‌شود.'}</p>}
+                {e.record && <p className="hint">این کلاس ضبط می‌شود؛ ضبط فقط برای ثبت‌نامی‌ها و تا ۶ ماه می‌ماند.</p>}
                 {!import.meta.env.VITE_DEMO && <a className="btn btn-secondary" href={`/api/events/${e.id}/ics`}><CalendarPlus className="size-4" />افزودن به تقویم</a>}
               </>
             ) : e.my?.status === 'WAITLIST' ? <p className="text-sm text-body"><b className="block text-ink">در فهرست انتظارید</b>اگر کسی انصراف بدهد، به نوبت جایش را می‌گیرید و اعلانش را می‌گیرید.</p>
@@ -231,3 +233,26 @@ function GroupRegister({ e, onClose }: { e: EventDetail; onClose: () => void }) 
   );
 }
 
+
+/** کلاس روی سرور مدرسه: حضور من و ضبط‌ها */
+interface LiveInfo { useBbb: boolean; record: boolean; available: boolean; finalized: boolean; attendance: { minutes: number; needed: number; total: number } | null; recordings: { id: string; durationSec: number | null; startedAt: string | null; expiresAt: string }[]; canSeeRecordings: boolean }
+export function LiveSection({ eventId, ended }: { eventId: string; ended: boolean }) {
+  const q = useQuery({ queryKey: ['live', eventId], queryFn: () => api<LiveInfo>(`/events/${eventId}/live`), refetchInterval: ended ? false : 60_000 });
+  const qc = useQueryClient(); const toast = useToast();
+  const open = useMutation({ mutationFn: (rid: string) => api<{ url: string }>(`/events/${eventId}/recordings/${rid}`, { method: 'POST' }),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['lesson'] }); qc.invalidateQueries({ queryKey: ['course'] }); window.open(r.url, '_blank', 'noopener'); }, onError: (e) => toast((e as Error).message, 'err') });
+  const l = q.data; if (!l) return null;
+  if (!l.attendance && !l.recordings.length && !(ended && l.record && l.canSeeRecordings)) return null;
+  return (
+    <section className="card grid gap-3 p-5">
+      <h2 className="font-extrabold">کلاس زنده</h2>
+      {l.attendance && <div className="grid gap-1 text-sm"><span>حضور شما: <b className="text-ink">{fa(l.attendance.minutes)} دقیقه</b> از {fa(l.attendance.total)} دقیقه</span>
+        <div className="bar" role="progressbar" aria-valuenow={l.attendance.minutes} aria-valuemax={l.attendance.total} aria-label="حضور"><span style={{ width: `${Math.min(100, (l.attendance.minutes / Math.max(1, l.attendance.total)) * 100)}%` }} /></div>
+        <span className="hint">{l.attendance.minutes >= l.attendance.needed ? 'حضورتان کامل است' : `برای ثبت حضور دست‌کم ${fa(l.attendance.needed)} دقیقه لازم است`}{l.finalized ? '' : '؛ حضور نهایی نیم ساعت پس از پایان کلاس ثبت می‌شود'}.</span></div>}
+      {l.recordings.length > 0 ? <div className="grid gap-2">{l.recordings.map((r, i) => (
+        <div key={r.id} className="flex flex-wrap items-center gap-3 rounded-xl bg-sunken p-3"><MonitorPlay className="size-5 text-leaf" /><span className="min-w-0 flex-1 text-sm">ضبط {l.recordings.length > 1 ? fa(i + 1) : 'کلاس'}{r.durationSec ? ` · ${fa(Math.round(r.durationSec / 60))} دقیقه` : ''}<span className="hint block">تا {jDate(r.expiresAt)} نگه داشته می‌شود</span></span>
+          <button className="btn btn-secondary btn-sm" disabled={open.isPending} onClick={() => open.mutate(r.id)}>دیدن ضبط</button></div>))}</div>
+        : ended && l.record && l.canSeeRecordings ? <p className="hint">ضبط کلاس پس از پردازش (معمولاً تا چند ساعت) همین‌جا می‌آید و با اعلان خبر می‌دهیم.</p> : null}
+    </section>
+  );
+}

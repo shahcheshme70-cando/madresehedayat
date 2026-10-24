@@ -71,6 +71,9 @@ services:
       EITAA_APP_TOKEN: ${EITAA_APP_TOKEN:-}
       EITAA_APP_URL: ${EITAA_APP_URL:-}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      BBB_URL: ${BBB_URL:-}
+      BBB_SECRET: ${BBB_SECRET:-}
+      BBB_CHECKSUM: ${BBB_CHECKSUM:-sha1}
 
   # پشتیبان روزانهٔ پایگاه داده روی همان سرور (۷ روز آخر). برای خاموش کردن: BACKUP_KEEP_DAYS=0
   backup:

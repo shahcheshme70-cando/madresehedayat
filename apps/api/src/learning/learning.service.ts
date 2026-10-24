@@ -232,6 +232,7 @@ export class LearningService {
     if (l.type === 'QUIZ' && body.completed) throw new BadRequestException({ code: 'quiz_needs_attempt', message: 'آزمون با ثبت پاسخ‌ها تکمیل می‌شود' });
     const completed = !!body.completed;
     const data = body.data as any;
+    if (l.type === 'LIVE' && completed) throw new BadRequestException({ code: 'live_attend', message: 'این درس با حضور در جلسهٔ زنده (دست‌کم نیمی از زمان) یا دیدن ضبط آن تمام می‌شود' });
     if (l.type === 'MISSION' && (completed || data !== undefined)) throw new BadRequestException({ code: 'use_mission_submit', message: 'گزارش مأموریت از بخش مأموریت فرستاده می‌شود' });
     const set: Partial<typeof lessonProgress.$inferInsert> = { updatedAt: new Date() };
     if (typeof body.positionSec === 'number') set.positionSec = Math.max(0, Math.floor(body.positionSec));

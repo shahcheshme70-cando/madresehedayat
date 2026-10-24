@@ -7,7 +7,7 @@ import {
 import { AuthUser, CurrentUser, Roles } from '../common/auth.decorators';
 import { AdminService } from './admin.service';
 
-const LESSON_TYPES = ['VIDEO', 'AUDIO', 'TEXT', 'QUIZ', 'PRACTICE', 'WORKSHEET', 'MISSION', 'TOOL'] as const;
+const LESSON_TYPES = ['VIDEO', 'AUDIO', 'TEXT', 'QUIZ', 'PRACTICE', 'WORKSHEET', 'MISSION', 'TOOL', 'LIVE'] as const;
 const ROLE_NAMES = ['HQ_ADMIN', 'HQ_OPERATOR', 'INSTRUCTOR', 'RAHYAR', 'IMAM', 'ORG_ADMIN'] as const;
 
 class CreateCourseDto { @IsString() @Length(3, 120) title: string; }

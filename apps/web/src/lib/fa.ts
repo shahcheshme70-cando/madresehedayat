@@ -25,7 +25,7 @@ export function ago(v: string | Date) {
 export const maskMobile = (m: string) => fa(`${m.slice(0, 4)} ${m.slice(4, 7)} ${m.slice(7)}`);
 
 export const LESSON_LABEL: Record<string, string> = {
-  VIDEO: 'ویدیو', AUDIO: 'صوت', TEXT: 'متن', QUIZ: 'آزمون', PRACTICE: 'تمرین', WORKSHEET: 'برگهٔ کار', MISSION: 'مأموریت', TOOL: 'ابزار کار',
+  VIDEO: 'ویدیو', AUDIO: 'صوت', TEXT: 'متن', QUIZ: 'آزمون', PRACTICE: 'تمرین', WORKSHEET: 'برگهٔ کار', MISSION: 'مأموریت', TOOL: 'ابزار کار', LIVE: 'جلسهٔ زنده',
 };
 export const ROLE_LABEL: Record<string, string> = {
   HQ_ADMIN: 'مدیر ستاد', HQ_OPERATOR: 'اپراتور محتوا', INSTRUCTOR: 'مدرس', RAHYAR: 'راهیار', IMAM: 'امام محله', ORG_ADMIN: 'مدیر سازمان',

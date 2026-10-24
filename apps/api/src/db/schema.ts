@@ -163,7 +163,7 @@ export const modules = pgTable('modules', {
   order: integer('order').notNull(),
 });
 
-export const lessonType = pgEnum('lesson_type', ['VIDEO', 'AUDIO', 'TEXT', 'QUIZ', 'PRACTICE', 'WORKSHEET', 'MISSION', 'TOOL']);
+export const lessonType = pgEnum('lesson_type', ['VIDEO', 'AUDIO', 'TEXT', 'QUIZ', 'PRACTICE', 'WORKSHEET', 'MISSION', 'TOOL', 'LIVE']);
 
 export const lessons = pgTable('lessons', {
   id: id(),
@@ -407,6 +407,9 @@ export const events = pgTable('events', {
   audienceMosqueId: text('audience_mosque_id').references(() => mosques.id), // برنامهٔ امام برای اعضای مسجدش
   audienceCoreId: text('audience_core_id').references(() => cores.id), // برنامهٔ مسئول هسته برای اعضای هسته
   feeNote: text('fee_note'), // هزینهٔ شرکت و نحوهٔ پرداخت (فقط اعلام؛ دریافت بیرون از سامانه)
+  useBbb: boolean('use_bbb').notNull().default(false), // کلاس زنده روی سرور مدرسه (BigBlueButton) به‌جای پیوند بیرونی
+  record: boolean('record').notNull().default(false), // ضبط (با اعلام در کلاس؛ فقط برای ثبت‌نامی‌ها؛ ۶ ماه)
+  liveFinalizedAt: timestamp('live_finalized_at', { withTimezone: true }), // حضور ≥۵۰٪ حساب شد
   status: eventStatus('status').notNull().default('DRAFT'),
   cancelReason: text('cancel_reason'),
   createdById: text('created_by_id').notNull().references(() => users.id),
@@ -762,3 +765,26 @@ export const courseRatings = pgTable('course_ratings', {
   comment: text('comment'), // رمزگذاری‌شده
   updatedAt: updatedAt(),
 }, (t) => [primaryKey({ columns: [t.userId, t.courseId] })]);
+
+
+// ═══════════════════════ کلاس زنده (BigBlueButton) ═══════════════════════
+
+/** مدت حضور هر نفر در کلاس زنده؛ هر دقیقه از سرور کلاس خوانده می‌شود */
+export const liveAttendance = pgTable('live_attendance', {
+  eventId: text('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  seconds: integer('seconds').notNull().default(0),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.eventId, t.userId] })]);
+
+/** ضبط‌های کلاس؛ پس از ۶ ماه از سرور کلاس پاک می‌شوند */
+export const liveRecordings = pgTable('live_recordings', {
+  recordId: text('record_id').primaryKey(),
+  eventId: text('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  url: text('url').notNull(),
+  durationSec: integer('duration_sec'),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+});

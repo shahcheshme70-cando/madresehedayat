@@ -10,6 +10,7 @@ import { FileStore } from '../files/files.controller';
 import { MissionsService } from '../rahyar/missions.service';
 import { Messenger } from '../messenger/messenger';
 import { Business } from '../business/business';
+import { bbbEnabled, LiveService } from '../live/live';
 import { EventInput, EventsService } from './events.service';
 
 class GroupDto { @IsString() coreId: string; @IsArray() @ArrayMaxSize(200) @IsString({ each: true }) userIds: string[]; }
@@ -43,7 +44,7 @@ export class EventsController {
 
   // ───────── برگزارکننده ─────────
   @Get('manage/events/options')
-  async options(@CurrentUser() u: AuthUser) { return { open: this.svc.canCreate(u, 'IN_PERSON') ? 'ALL' : this.svc.canCreate(u, 'ONLINE') ? 'ONLINE' : null, scoped: await this.svc.scopedOptions(u) }; }
+  async options(@CurrentUser() u: AuthUser) { return { open: this.svc.canCreate(u, 'IN_PERSON') ? 'ALL' : this.svc.canCreate(u, 'ONLINE') ? 'ONLINE' : null, scoped: await this.svc.scopedOptions(u), bbb: bbbEnabled() }; }
   @Get('manage/events')
   managed(@CurrentUser() u: AuthUser) { return this.svc.managed(u); }
   @Post('manage/events')
@@ -73,12 +74,15 @@ export class Scheduler implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('Scheduler');
   private timers: NodeJS.Timeout[] = [];
   constructor(private readonly events: EventsService, private readonly missions: MissionsService, private readonly store: FileStore, @InjectDb() private readonly db: Db,
-    private readonly messenger: Messenger, private readonly access: AccessLog, private readonly business: Business) {}
+    private readonly messenger: Messenger, private readonly access: AccessLog, private readonly business: Business, private readonly live: LiveService) {}
 
   onModuleInit() {
     if (process.env.SCHEDULER === 'off') return;
     const safe = (name: string, fn: () => Promise<unknown>) => () => fn().catch((e) => this.log.error(`${name}: ${e?.message ?? e}`));
     this.timers.push(setInterval(safe('reminders', () => this.events.sendReminders()), 60_000));
+    // کلاس زنده: حاضران هر دقیقه، حضور نهایی و ضبط‌ها هر ۵ دقیقه
+    this.timers.push(setInterval(safe('live-poll', () => this.live.poll()), 60_000));
+    this.timers.push(setInterval(safe('live-final', () => this.live.finalize()), 5 * 60_000));
     this.timers.push(setInterval(safe('escalate', () => this.missions.escalate()), 3600_000));
     this.timers.push(setInterval(safe('expire', () => this.expire()), 3600_000));
     this.timers.push(setInterval(safe('purge', () => this.access.purge()), 24 * 3600_000));

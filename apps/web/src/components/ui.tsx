@@ -1,6 +1,6 @@
 import {
   Award, BookOpen, Check, CircleAlert, ClipboardList, Flag, GraduationCap, Headphones, Landmark, ListChecks, LoaderCircle,
-  PenLine, PlayCircle, Route, Sparkles, Users, Wrench, X, type LucideIcon,
+  PenLine, PlayCircle, Radio, Route, Sparkles, Users, Wrench, X, type LucideIcon,
 } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { fa } from '../lib/fa';
@@ -15,7 +15,7 @@ export const CourseIcon = ({ name, className }: { name: string; className?: stri
 };
 
 export const LESSON_ICON: Record<string, LucideIcon> = {
-  VIDEO: PlayCircle, AUDIO: Headphones, TEXT: BookOpen, QUIZ: ListChecks, PRACTICE: Sparkles, WORKSHEET: PenLine, MISSION: Flag, TOOL: Wrench,
+  VIDEO: PlayCircle, AUDIO: Headphones, TEXT: BookOpen, QUIZ: ListChecks, PRACTICE: Sparkles, WORKSHEET: PenLine, MISSION: Flag, TOOL: Wrench, LIVE: Radio,
 };
 
 export function Spinner({ label = 'در حال بارگذاری' }: { label?: string }) {

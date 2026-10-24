@@ -11,7 +11,7 @@ import { JalaliInput } from '../components/JalaliInput';
 const useBase = () => (useLocation().pathname.startsWith('/admin') ? '/admin/events' : '/manage/events');
 
 interface MRow { id: string; title: string; kind: string; startsAt: string; status: string; registered: number; waitlist: number; pending: number; attended: number; capacity: number | null }
-interface Person { userId: string; name: string; status: string; code: string; attendedAt: string | null; method: string | null; lateCancel: boolean; feedback: { rating: number; comment?: string } | null; county: string | null; mosque: string | null; byGroup: boolean }
+interface Person { userId: string; name: string; status: string; code: string; attendedAt: string | null; method: string | null; liveMinutes?: number; lateCancel: boolean; feedback: { rating: number; comment?: string } | null; county: string | null; mosque: string | null; byGroup: boolean }
 interface Full { event: any; counts: { registered: number; waitlist: number; pending: number; attended: number }; rating: number | null; people: Person[] }
 
 const ST: Record<string, [string, string]> = { DRAFT: ['', 'پیش‌نویس'], PUBLISHED: ['chip-leaf', 'منتشر شده'], CANCELLED: ['chip-rose', 'لغو شده'] };
@@ -47,7 +47,7 @@ export function ManageEventList() {
 const toLocal = (v?: string | null) => v ?? '';
 const fromLocal = (v: string) => v || null;
 
-interface EventOptions { open: 'ALL' | 'ONLINE' | null; scoped: { kind: 'ORG' | 'MOSQUE' | 'CORE'; id: string; label: string }[] }
+interface EventOptions { open: 'ALL' | 'ONLINE' | null; bbb: boolean; scoped: { kind: 'ORG' | 'MOSQUE' | 'CORE'; id: string; label: string }[] }
 const scopeFields = (o: EventOptions['scoped'][number]) => ({ audienceNetworkId: o.kind === 'ORG' ? o.id : null, audienceMosqueId: o.kind === 'MOSQUE' ? o.id : null, audienceCoreId: o.kind === 'CORE' ? o.id : null });
 
 export function EventEditor() {
@@ -67,13 +67,14 @@ export function EventEditor() {
     if (id && ex.data) { const e = ex.data.event; setF({ ...e, startsAt: toLocal(e.startsAt), endsAt: toLocal(e.endsAt), registrationDeadline: toLocal(e.registrationDeadline) }); }
     else if (!id && opts.data) {
       const sc = !opts.data.open && opts.data.scoped[0];
-      setF({ kind: opts.data.open === 'ONLINE' ? 'ONLINE' : 'IN_PERSON', waitlist: true, requiresApproval: false, title: '', startsAt: '', endsAt: '', ...(sc ? scopeFields(sc) : {}) });
+      setF({ kind: opts.data.open === 'ONLINE' ? 'ONLINE' : 'IN_PERSON', waitlist: true, requiresApproval: false, title: '', startsAt: '', endsAt: '', useBbb: opts.data.bbb, ...(sc ? scopeFields(sc) : {}) });
     }
   }, [id, ex.data, opts.data]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = useMutation({
     mutationFn: () => {
       const body: any = {};
       for (const k of ['title', 'kind', 'description', 'agenda', 'location', 'mapUrl', 'onlineUrl', 'bring', 'hostName', 'waitlist', 'requiresApproval', 'audienceGender', 'audienceProvinceId', 'audienceCountyId', 'audienceNetworkId', 'audienceMosqueId', 'audienceCoreId', 'feeNote']) body[k] = f[k] ?? null;
+      body.useBbb = f.kind === 'ONLINE' && !!f.useBbb; body.record = body.useBbb && !!f.record; if (body.useBbb) body.onlineUrl = null;
       body.capacity = f.capacity ? Number(toEn(String(f.capacity))) : null;
       body.startsAt = fromLocal(f.startsAt); body.endsAt = fromLocal(f.endsAt); body.registrationDeadline = fromLocal(f.registrationDeadline);
       return id ? api(`/manage/events/${id}`, { method: 'PATCH', body }) : api<{ id: string }>('/manage/events', { body });
@@ -103,7 +104,14 @@ export function EventEditor() {
           {f.kind === 'IN_PERSON' ? <>
             <div className="field"><label htmlFor="loc">نشانی</label><input id="loc" className="input" value={f.location ?? ''} onChange={set('location')} placeholder="شهر، مسجد، سالن" /></div>
             <div className="field"><label htmlFor="map">پیوند نقشه <span className="font-normal text-muted">(نشان یا بلد، اختیاری)</span></label><input id="map" className="input ltr" dir="ltr" value={f.mapUrl ?? ''} onChange={set('mapUrl')} placeholder="https://nshn.ir/…" /></div>
-          </> : <div className="field"><label htmlFor="ou">پیوند کلاس</label><input id="ou" className="input ltr" dir="ltr" value={f.onlineUrl ?? ''} onChange={set('onlineUrl')} placeholder="https://…" /><span className="hint">فقط ثبت‌نامی‌ها و از یک ساعت پیش از شروع می‌بینند؛ ورودشان حضور حساب می‌شود.</span></div>}
+          </> : <div className="grid gap-3">
+            {(opts.data?.bbb || f.useBbb) && <div className="seg w-fit">{[[true, 'کلاس روی سرور مدرسه'], [false, 'پیوند بیرونی']].map(([k, t]) => <button type="button" key={String(k)} aria-pressed={!!f.useBbb === k} onClick={() => setF({ ...f, useBbb: k })}>{t as string}</button>)}</div>}
+            {f.useBbb ? <>
+              <p className="hint">کلاس روی BigBlueButton خود مدرسه برگزار می‌شود. ثبت‌نامی‌ها از ۱۵ دقیقه پیش از شروع وارد می‌شوند و کسی «حاضر» حساب می‌شود که دست‌کم نیمی از زمان کلاس حضور داشته باشد.{f.audienceNetworkId || f.audienceMosqueId || f.audienceCoreId ? ' برنامه‌های اعضا (جز بستهٔ سازمانی ویژه) سقف ماهانهٔ ساعت دارند.' : ''}</p>
+              <label className="flex items-start gap-3"><input type="checkbox" className="mt-1 size-5 accent-[var(--leaf)]" checked={!!f.record} onChange={(e) => setF({ ...f, record: e.target.checked })} />
+                <span>کلاس ضبط شود<span className="hint block">اول کلاس به همه اعلام می‌شود. ضبط فقط برای ثبت‌نامی‌ها و تا ۶ ماه نگه داشته می‌شود؛ کسی که جا ماند با دیدنش درس «جلسهٔ زنده» را تمام می‌کند.</span></span></label>
+            </> : <div className="field"><label htmlFor="ou">پیوند کلاس</label><input id="ou" className="input ltr" dir="ltr" value={f.onlineUrl ?? ''} onChange={set('onlineUrl')} placeholder="https://…" /><span className="hint">فقط ثبت‌نامی‌ها و از یک ساعت پیش از شروع می‌بینند؛ با پیوند بیرونی، ورود به کلاس حضور حساب می‌شود.</span></div>}
+          </div>}
           <div className="field"><label htmlFor="h">میزبان یا سخنران <span className="font-normal text-muted">(اختیاری)</span></label><input id="h" className="input" value={f.hostName ?? ''} onChange={set('hostName')} /></div>
           <div className="field"><label htmlFor="d">دربارهٔ برنامه</label><textarea id="d" className="input min-h-28" value={f.description ?? ''} onChange={set('description')} /></div>
           <div className="field"><label htmlFor="ag">برنامهٔ جلسه <span className="font-normal text-muted">(اختیاری)</span></label><textarea id="ag" className="input" value={f.agenda ?? ''} onChange={set('agenda')} /></div>
@@ -202,7 +210,7 @@ export function ManageEvent() {
                   <td className="py-2.5"><b className="text-ink">{p.name}</b>{p.byGroup && <span className="block text-xs text-muted">ثبت‌نام گروهی</span>}{p.lateCancel && <span className="block text-xs text-flame-ink">انصراف دیرهنگام</span>}{p.feedback?.comment && <span className="block text-xs text-muted">«{p.feedback.comment}»</span>}</td>
                   <td className="text-muted">{[p.county, p.mosque].filter(Boolean).join(' · ')}</td>
                   <td dir="ltr" className="tnum text-center text-muted">{p.status === 'REGISTERED' ? p.code : ''}</td>
-                  <td className="text-center">{p.attendedAt ? <span className="chip chip-leaf">{p.method === 'ONLINE' ? 'آنلاین' : p.method === 'QR' ? 'با کارت' : 'دستی'}</span> : '—'}</td>
+                  <td className="text-center">{p.attendedAt ? <span className="chip chip-leaf">{p.method === 'ONLINE' ? 'آنلاین' : p.method === 'QR' ? 'با کارت' : 'دستی'}</span> : '—'}{p.liveMinutes != null && p.liveMinutes > 0 && <span className="hint block">{fa(p.liveMinutes)} دقیقه در کلاس</span>}</td>
                   <td className="whitespace-nowrap text-end">
                     {p.status === 'PENDING' && <><button className="btn btn-secondary btn-sm" onClick={() => decide.mutate({ userId: p.userId, action: 'approve' })}>تأیید</button><button className="btn btn-ghost btn-sm" onClick={() => decide.mutate({ userId: p.userId, action: 'reject' })}>رد</button></>}
                     {p.status === 'REGISTERED' && (p.attendedAt

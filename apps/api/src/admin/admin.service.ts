@@ -35,6 +35,7 @@ export function validateContent(type: LessonTypeName, c: any): string | null {
     case 'WORKSHEET': return c.prompt && Array.isArray(c.fields) && c.fields.length ? null : 'برگه دست‌کم یک خانه لازم دارد';
     case 'MISSION': return c.goal && Array.isArray(c.steps) ? null : 'هدف مأموریت را بنویسید';
     case 'TOOL': return c.toolId && toolById(c.toolId) ? null : 'ابزار درس را انتخاب کنید';
+    case 'LIVE': return c.eventId ? null : 'برنامهٔ آنلاین این جلسه را انتخاب کنید';
     default: return null;
   }
 }
@@ -183,7 +184,7 @@ export class AdminService {
     const [{ n }] = await this.db.select({ n: count() }).from(lessons).where(eq(lessons.moduleId, moduleId));
     const starter: Record<string, unknown> = {
       VIDEO: { provider: 'aparat', aparatHash: '' }, AUDIO: {}, TEXT: { body: '' },
-      QUIZ: { questions: [] }, WORKSHEET: { prompt: '', fields: [] }, MISSION: { goal: '', steps: [] }, PRACTICE: {}, TOOL: {},
+      QUIZ: { questions: [] }, WORKSHEET: { prompt: '', fields: [] }, MISSION: { goal: '', steps: [] }, PRACTICE: {}, TOOL: {}, LIVE: {},
     };
     const [l] = await this.db.insert(lessons).values({ moduleId, title: data.title, type: data.type, order: n, content: starter[data.type] ?? {} }).returning();
     return l;

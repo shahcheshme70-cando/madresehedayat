@@ -6,6 +6,8 @@ import { Dialog, ErrorBox, LESSON_ICON, Spinner, useToast } from '../components/
 import { LessonRating, useFeedbackContext } from '../components/Feedback';
 import { api, ApiError } from '../lib/api';
 import { ToolLesson } from './Tools';
+import { LiveSection } from './Events';
+import type { EventDetail } from '../lib/types';
 import { fa, jDate, LESSON_LABEL, MISSION_LABEL } from '../lib/fa';
 import type { Completion, CourseDetail, LessonDetail, QuizQuestion } from '../lib/types';
 
@@ -117,6 +119,7 @@ function LessonBody({ l, onChange }: { l: LessonDetail; onChange: (c?: Completio
     case 'WORKSHEET': return <Worksheet l={l} onChange={onChange} />;
     case 'MISSION': return <Mission l={l} onChange={onChange} />;
     case 'TOOL': return <ToolLesson lessonId={l.id} />;
+    case 'LIVE': return <LiveLesson l={l} />;
     default: return (
       <div className="flex items-start gap-3 rounded-2xl bg-sunken p-5"><Wrench className="size-5 shrink-0 text-muted" /><p>این نوع درس ({LESSON_LABEL[l.type]}) در مرحلهٔ بعد ساخته می‌شود.</p></div>
     );
@@ -426,6 +429,35 @@ function Mission({ l, onChange }: { l: LessonDetail; onChange: (c?: Completion |
         </div>
       )}
       <Samples lessonId={l.id} />
+    </div>
+  );
+}
+
+/** درس «جلسهٔ زنده»: با حضور (دست‌کم نیمی از زمان) یا دیدن ضبط تمام می‌شود */
+function LiveLesson({ l }: { l: LessonDetail }) {
+  const eventId = l.content?.eventId as string | undefined;
+  const qc = useQueryClient(); const toast = useToast();
+  const ev = useQuery({ queryKey: ['event', eventId], queryFn: () => api<EventDetail>(`/events/${eventId}`), enabled: !!eventId });
+  const reg = useMutation({ mutationFn: () => api(`/events/${eventId}/register`, { method: 'POST' }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['event', eventId] }); toast('ثبت‌نام شدید؛ یادآوری می‌فرستیم'); }, onError: (e) => toast((e as Error).message, 'err') });
+  const join = useMutation({ mutationFn: () => api<{ url: string }>(`/events/${eventId}/join`, { method: 'POST' }), onSuccess: (r) => window.open(r.url, '_blank', 'noopener'), onError: (e) => toast((e as Error).message, 'err') });
+  if (!eventId) return <p className="text-muted">این جلسه هنوز به برنامه‌ای وصل نشده است.</p>;
+  if (ev.isLoading) return <Spinner />;
+  if (ev.error) return <ErrorBox error={ev.error} />;
+  const e = ev.data!;
+  const ended = new Date(e.endsAt).getTime() < Date.now();
+  const done = !!l.progress?.completedAt;
+  return (
+    <div className="grid gap-4">
+      <div className="card grid gap-3 p-5">
+        <b className="text-lg text-ink">{e.title}</b>
+        <span className="flex items-center gap-2 text-sm text-body"><Clock className="size-4 text-leaf" />{jDate(e.startsAt)} · {new Date(e.startsAt).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>
+        {done ? <p className="flex items-center gap-2 font-bold text-leaf-ink"><CheckCircle2 className="size-5" />این درس تمام شده است</p>
+          : e.my?.status === 'REGISTERED' ? (!ended && <button className="btn btn-primary w-fit" disabled={join.isPending || !e.onlineSoon} onClick={() => join.mutate()}>ورود به کلاس</button>)
+          : !ended && e.status === 'PUBLISHED' ? <button className="btn btn-primary w-fit" disabled={reg.isPending} onClick={() => reg.mutate()}>ثبت‌نام در جلسه</button> : null}
+        <p className="hint">این درس با حضور در جلسه (دست‌کم نیمی از زمان آن) تمام می‌شود.{e.record ? ' اگر نرسیدید، با دیدن ضبط جلسه هم تمام می‌شود.' : ''}</p>
+        <Link to={`/events/${e.id}`} className="text-sm font-bold text-leaf-ink">صفحهٔ برنامه ←</Link>
+      </div>
+      {e.useBbb && <LiveSection eventId={e.id} ended={ended} />}
     </div>
   );
 }

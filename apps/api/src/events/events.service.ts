@@ -6,6 +6,8 @@ import { Db, InjectDb } from '../db/db.module';
 import { pgArr } from '../db/id';
 import { coreMemberships, cores, eventReminders, events, mosques, networks, registrations, roleGrants, users } from '../db/schema';
 import { Business } from '../business/business';
+import { bbbEnabled, LiveService } from '../live/live';
+import { jalaliNow, tehranStart } from '../common/jalali';
 import { Notifier } from '../notifications/notifications';
 
 const ALPHA = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -20,7 +22,7 @@ type Ev = typeof events.$inferSelect;
 @Injectable()
 export class EventsService {
   private readonly log = new Logger('Events');
-  constructor(@InjectDb() private readonly db: Db, private readonly notify: Notifier, private readonly business: Business) {}
+  constructor(@InjectDb() private readonly db: Db, private readonly notify: Notifier, private readonly business: Business, private readonly live: LiveService) {}
 
   // ───────── دسترسی ─────────
   canCreate(u: AuthUser, kind?: string) {
@@ -43,6 +45,27 @@ export class EventsService {
     for (const c of await this.db.select({ id: cores.id, name: cores.name }).from(cores).where(eq(cores.leaderId, u.id))) out.push({ kind: 'CORE', id: c.id, label: `هستهٔ «${c.name}»` });
     return out;
   }
+  /**
+   * سقف کلاس زنده روی سرور مدرسه برای بستهٔ پایه، مسجد و هسته: ساعت در ماه شمسی (از تنظیمات ستاد).
+   * بستهٔ سازمانی ویژه و برنامه‌های ستاد و راهیاران سقف ندارند.
+   */
+  private async assertLiveHours(v: EventInput & { id?: string }) {
+    if (!v.useBbb || !v.startsAt || !v.endsAt) return;
+    const key = v.audienceNetworkId ? { col: 'audience_network_id', id: v.audienceNetworkId } : v.audienceMosqueId ? { col: 'audience_mosque_id', id: v.audienceMosqueId } : v.audienceCoreId ? { col: 'audience_core_id', id: v.audienceCoreId } : null;
+    if (!key) return;
+    if (v.audienceNetworkId) { const s = await this.business.activeSub(v.audienceNetworkId); if (s && s.plan === 'ORG_PREMIUM') return; }
+    const cap = (await this.business.costs()).basicLiveHours;
+    const start = new Date(v.startsAt as any);
+    const j = jalaliNow(start); const from = tehranStart(j.jy, j.jm, 1); const to = j.jm === 12 ? tehranStart(j.jy + 1, 1, 1) : tehranStart(j.jy, j.jm + 1, 1);
+    const r = await this.db.execute<{ h: number }>(sql`select coalesce(sum(extract(epoch from ends_at - starts_at)) / 3600, 0)::float as h from events
+      where use_bbb and status <> 'CANCELLED' and ${sql.raw(key.col)} = ${key.id} and starts_at >= ${from} and starts_at < ${to} ${v.id ? sql`and id <> ${v.id}` : sql``}`);
+    const used = Number(r.rows[0].h), add = (new Date(v.endsAt as any).getTime() - start.getTime()) / 3600_000;
+    if (used + add > cap + 1e-6) {
+      const fa = (n: number) => (Math.round(n * 10) / 10).toString().replace('.', '٫').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+      throw new BadRequestException({ code: 'live_hours', message: `سقف کلاس زنده روی سرور مدرسه ${fa(cap)} ساعت در ماه است؛ این ماه ${fa(used)} ساعت برنامه دارید و این کلاس ${fa(add)} ساعت است. کلاس را کوتاه‌تر کنید یا پیوند بیرونی بگذارید` });
+    }
+  }
+
   private async assertScope(u: AuthUser, v: EventInput, creating: boolean) {
     const scoped = [v.audienceNetworkId, v.audienceMosqueId, v.audienceCoreId].filter(Boolean);
     if (scoped.length > 1) throw new BadRequestException({ code: 'bad_audience', message: 'مخاطب برنامه فقط یکی از این‌ها است: سازمان، مسجد یا هسته' });
@@ -52,6 +75,7 @@ export class EventsService {
       throw new ForbiddenException({ code: 'forbidden', message: opts.length ? 'مخاطب برنامه را انتخاب کنید: اعضای سازمان، مسجد یا هستهٔ خودتان' : 'اجازهٔ ساخت برنامه ندارید' });
     }
     if (v.audienceNetworkId) await this.business.orgGate(u, v.audienceNetworkId, 'events');
+    await this.assertLiveHours(v);
     if (v.audienceMosqueId && !HQ(u)) { const m = await this.db.query.mosques.findFirst({ where: eq(mosques.id, v.audienceMosqueId) }); if (m?.imamId !== u.id) throw new ForbiddenException({ code: 'forbidden', message: 'فقط امام همین مسجد برای اعضایش برنامه می‌گذارد' }); }
     if (v.audienceCoreId && !HQ(u)) { const c = await this.db.query.cores.findFirst({ where: eq(cores.id, v.audienceCoreId) }); if (c?.leaderId !== u.id) throw new ForbiddenException({ code: 'forbidden', message: 'فقط مسئول همین هسته برای اعضایش برنامه می‌گذارد' }); }
   }
@@ -106,7 +130,7 @@ export class EventsService {
       id: e.id, title: e.title, kind: e.kind, startsAt: e.startsAt, endsAt: e.endsAt, location: e.location, hostName: e.hostName,
       capacity: e.capacity, seatsLeft, waitlist: e.waitlist, requiresApproval: e.requiresApproval, registrationDeadline: e.registrationDeadline,
       audienceGender: e.audienceGender, status: e.status, cancelReason: e.cancelReason, courseId: e.courseId, feeNote: e.feeNote,
-      scoped: e.audienceNetworkId ? 'ORG' : e.audienceMosqueId ? 'MOSQUE' : e.audienceCoreId ? 'CORE' : null,
+      scoped: e.audienceNetworkId ? 'ORG' : e.audienceMosqueId ? 'MOSQUE' : e.audienceCoreId ? 'CORE' : null, useBbb: e.useBbb, record: e.useBbb && e.record,
       registered: c?.registered ?? 0,
       my: mine && mine.status !== 'CANCELLED' && mine.status !== 'REJECTED' ? { status: mine.status, checkInCode: mine.status === 'REGISTERED' ? mine.checkInCode : null, attendedAt: mine.attendedAt, feedback: mine.feedback } : mine ? { status: mine.status } : null,
     };
@@ -114,7 +138,7 @@ export class EventsService {
       description: e.description, agenda: e.agenda, bring: e.bring, mapUrl: e.mapUrl,
       // پیوند کلاس فقط برای ثبت‌نام‌شده‌ها و از یک ساعت پیش از شروع
       onlineUrl: mine?.status === 'REGISTERED' && e.onlineUrl && Date.now() > e.startsAt.getTime() - 3600_000 ? e.onlineUrl : null,
-      onlineSoon: e.kind === 'ONLINE' && !!e.onlineUrl,
+      onlineSoon: e.kind === 'ONLINE' && (!!e.onlineUrl || (e.useBbb && bbbEnabled())),
     });
     return out;
   }
@@ -251,6 +275,8 @@ export class EventsService {
   /** ورود به کلاس آنلاین = حضور خودکار */
   async join(u: AuthUser, id: string) {
     const e = await this.get(id);
+    // کلاس روی سرور مدرسه: حضور با «دست‌کم نیمی از زمان» حساب می‌شود، نه با ورود
+    if (e.kind === 'ONLINE' && e.useBbb) return this.live.join(u, e);
     const r = await this.db.query.registrations.findFirst({ where: and(eq(registrations.eventId, id), eq(registrations.userId, u.id)) });
     if (e.kind !== 'ONLINE' || !e.onlineUrl) throw new BadRequestException({ code: 'not_online', message: 'این برنامه آنلاین نیست' });
     if (r?.status !== 'REGISTERED') throw new ForbiddenException({ code: 'not_registered', message: 'اول ثبت‌نام کنید' });
@@ -272,12 +298,13 @@ export class EventsService {
     if (creating && !scoped && u.roles.includes('INSTRUCTOR') && !this.canCreate(u, kind)) throw new ForbiddenException({ code: 'forbidden', message: 'مدرس فقط برنامهٔ آنلاین خودش را می‌سازد' });
     if (!creating && !scoped && kind && u.roles.includes('INSTRUCTOR') && !HQ(u) && !u.roles.includes('RAHYAR') && kind !== 'ONLINE') throw new ForbiddenException({ code: 'forbidden', message: 'مدرس فقط برنامهٔ آنلاین' });
     const v: EventInput = {};
-    const keys = ['title', 'description', 'agenda', 'kind', 'location', 'mapUrl', 'onlineUrl', 'bring', 'hostName', 'capacity', 'waitlist', 'requiresApproval', 'audienceGender', 'audienceProvinceId', 'audienceCountyId', 'courseId', 'audienceNetworkId', 'audienceMosqueId', 'audienceCoreId', 'feeNote'] as const;
+    const keys = ['title', 'description', 'agenda', 'kind', 'location', 'mapUrl', 'onlineUrl', 'bring', 'hostName', 'capacity', 'waitlist', 'requiresApproval', 'audienceGender', 'audienceProvinceId', 'audienceCountyId', 'courseId', 'audienceNetworkId', 'audienceMosqueId', 'audienceCoreId', 'feeNote', 'useBbb', 'record'] as const;
     for (const k of keys) if (d[k] !== undefined) (v as any)[k] = d[k] === '' ? null : d[k];
     for (const k of ['startsAt', 'endsAt', 'registrationDeadline'] as const) if (d[k] !== undefined) (v as any)[k] = d[k] ? new Date(d[k] as any) : null;
     if (v.capacity != null && (!Number.isInteger(v.capacity) || v.capacity < 1)) throw new BadRequestException({ code: 'bad_capacity', message: 'ظرفیت باید عدد مثبت باشد' });
     if (v.onlineUrl && !/^https:\/\//.test(v.onlineUrl)) throw new BadRequestException({ code: 'bad_url', message: 'پیوند کلاس باید با https شروع شود' });
     if (v.mapUrl && !/^https:\/\//.test(v.mapUrl)) throw new BadRequestException({ code: 'bad_url', message: 'پیوند نقشه باید با https شروع شود' });
+    if (v.useBbb && v.kind && v.kind !== 'ONLINE') v.useBbb = false;
     if (v.feeNote && v.feeNote.length > 500) throw new BadRequestException({ code: 'too_long', message: 'توضیح هزینه حداکثر ۵۰۰ نویسه است' });
     return v;
   }
@@ -294,7 +321,7 @@ export class EventsService {
   async update(u: AuthUser, id: string, d: EventInput & { notify?: boolean }) {
     const e = await this.manageable(u, id);
     const v = this.clean(u, d, false);
-    await this.assertScope(u, { ...e, ...v }, false);
+    await this.assertScope(u, { ...e, ...v, id: e.id } as any, false);
     const [n] = await this.db.update(events).set({ ...v, updatedAt: new Date() }).where(eq(events.id, id)).returning();
     if (n.endsAt <= n.startsAt) throw new BadRequestException({ code: 'bad_time', message: 'پایان باید بعد از شروع باشد' });
     const timeChanged = (v.startsAt && v.startsAt.getTime() !== e.startsAt.getTime()) || (v.location !== undefined && v.location !== e.location);
@@ -310,6 +337,8 @@ export class EventsService {
     const e = await this.manageable(u, id);
     const problems: string[] = [];
     if (e.kind === 'IN_PERSON' && !e.location) problems.push('نشانی برنامهٔ حضوری');
+    if (e.kind === 'ONLINE' && !e.useBbb && !e.onlineUrl) problems.push('پیوند کلاس آنلاین (یا «کلاس روی سرور مدرسه» را روشن کنید)');
+    if (e.kind === 'ONLINE' && e.useBbb && !bbbEnabled()) problems.push('سرور کلاس زنده هنوز راه نیفتاده؛ فعلاً پیوند بیرونی بگذارید');
     if (e.startsAt < new Date()) problems.push('زمان شروع گذشته است');
     if (problems.length) throw new BadRequestException({ code: 'not_ready', message: 'پیش از انتشار کامل کنید: ' + problems.join('، ') });
     const [n] = await this.db.update(events).set({ status: 'PUBLISHED' }).where(eq(events.id, id)).returning();
@@ -349,7 +378,8 @@ export class EventsService {
     const cs = (await this.counts([id])).get(id) ?? { registered: 0, waitlist: 0, pending: 0, attended: 0 };
     const fb = rows.rows.map((r: any) => r.feedback?.rating).filter(Boolean);
     return { event: { ...this.pub(e, cs), onlineUrl: e.onlineUrl, description: e.description, agenda: e.agenda, bring: e.bring, mapUrl: e.mapUrl, audienceProvinceId: e.audienceProvinceId, audienceCountyId: e.audienceCountyId, audienceNetworkId: e.audienceNetworkId, audienceMosqueId: e.audienceMosqueId, audienceCoreId: e.audienceCoreId },
-      counts: cs, rating: fb.length ? +(fb.reduce((a: number, b: number) => a + b, 0) / fb.length).toFixed(1) : null, people: rows.rows };
+      counts: cs, rating: fb.length ? +(fb.reduce((a: number, b: number) => a + b, 0) / fb.length).toFixed(1) : null,
+      people: e.useBbb ? await this.live.attendanceMap(id).then((m) => rows.rows.map((r: any) => ({ ...r, liveMinutes: m.get(r.userId) ?? 0 }))) : rows.rows };
   }
 
   async decide(u: AuthUser, id: string, userId: string, action: 'approve' | 'reject' | 'attend' | 'unattend') {

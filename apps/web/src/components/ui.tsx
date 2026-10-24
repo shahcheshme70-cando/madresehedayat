@@ -1,7 +1,8 @@
 import {
   Award, BookOpen, Check, CircleAlert, ClipboardList, Flag, GraduationCap, Headphones, Landmark, ListChecks, LoaderCircle,
-  PenLine, PlayCircle, Radio, Route, Sparkles, Users, Wrench, X, type LucideIcon,
+  Clock, Lock, PenLine, PlayCircle, Radio, Route, SearchX, Sparkles, Users, WifiOff, Wrench, X, type LucideIcon,
 } from 'lucide-react';
+import { ApiError } from '../lib/api';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { fa } from '../lib/fa';
 
@@ -22,13 +23,46 @@ export function Spinner({ label = 'در حال بارگذاری' }: { label?: st
   return <div className="flex items-center justify-center gap-2 py-16 text-muted" role="status"><LoaderCircle className="size-5 animate-spin" /><span>{label}…</span></div>;
 }
 
+/** چهرهٔ هر خطا: نماد و عنوان بر پایهٔ کد؛ متن اصلی همان پیام فارسی سرور است */
+function errorFace(e: unknown): { icon: LucideIcon; title: string; text: string; ref?: string; retry: boolean } {
+  if (!(e instanceof ApiError)) return { icon: CircleAlert, title: 'چیزی درست کار نکرد', text: 'این بخش باز نشد. یک بار دوباره امتحان کنید.', retry: true };
+  const ref = typeof e.data?.ref === 'string' ? e.data.ref : undefined;
+  if (e.code === 'offline') return { icon: WifiOff, title: 'اتصال برقرار نیست', text: e.message, retry: true };
+  if (e.code === 'unavailable' || e.code === 'db_unavailable' || e.code === 'timeout') return { icon: Clock, title: 'سامانه لحظه‌ای در دسترس نیست', text: e.message, ref, retry: true };
+  if (e.status === 404) return { icon: SearchX, title: e.message, text: 'شاید پاک شده یا نشانی را اشتباه زده‌اید.', retry: false };
+  if (e.status === 403) return { icon: Lock, title: 'دسترسی ندارید', text: e.message, retry: false };
+  if (e.status >= 500) return { icon: CircleAlert, title: 'خطایی در سرور پیش آمد', text: ref ? 'خطا ثبت شد و بررسی می‌شود. اگر تکرار شد، کد پیگیری را به پشتیبانی بدهید.' : e.message, ref, retry: true };
+  return { icon: CircleAlert, title: e.message, text: '', retry: e.status === 0 || e.status === 429 };
+}
+
 export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
-  const msg = error instanceof Error ? error.message : 'خطایی پیش آمد';
+  const f = errorFace(error);
   return (
-    <div className="card mx-auto my-10 max-w-md p-6 text-center">
-      <CircleAlert className="mx-auto size-8 text-rose" />
-      <p className="mt-3 font-bold text-ink">{msg}</p>
-      {onRetry && <button className="btn btn-secondary btn-sm mt-4" onClick={onRetry}>دوباره امتحان کنید</button>}
+    <div className="card mx-auto my-10 grid max-w-md justify-items-center gap-2 p-6 text-center" role="alert">
+      <f.icon className="size-8 text-rose" aria-hidden="true" />
+      <p className="font-bold text-ink">{f.title}</p>
+      {f.text && <p className="text-sm text-muted">{f.text}</p>}
+      {f.ref && <p className="text-xs text-muted">کد پیگیری: <b className="ltr tnum select-all text-ink">{f.ref}</b></p>}
+      <div className="mt-2 flex flex-wrap justify-center gap-2">
+        {onRetry && f.retry && <button className="btn btn-secondary btn-sm" onClick={onRetry}>دوباره امتحان کنید</button>}
+        {f.ref && <a className="btn btn-ghost btn-sm" href="/help">پشتیبانی</a>}
+      </div>
+    </div>
+  );
+}
+
+/** نوار «به اینترنت وصل نیستید» بالای همهٔ صفحه‌ها */
+export function OfflineBar() {
+  const [off, setOff] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false);
+  useEffect(() => {
+    const on = () => setOff(false), down = () => setOff(true);
+    window.addEventListener('online', on); window.addEventListener('offline', down);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', down); };
+  }, []);
+  if (!off) return null;
+  return (
+    <div className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-2 bg-ink px-4 py-2 text-sm font-semibold text-bg" style={{ paddingTop: 'calc(0.5rem + env(safe-area-inset-top, 0px))' }} role="status">
+      <WifiOff className="size-4" aria-hidden="true" />به اینترنت وصل نیستید؛ آنچه دیده‌اید می‌ماند و کارها بعد از وصل شدن انجام می‌شود.
     </div>
   );
 }
@@ -62,9 +96,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const n = useRef(0);
   const push = useCallback((text: string, tone: 'ok' | 'err' = 'ok') => {
     const id = ++n.current;
-    setItems((x) => [...x, { id, text, tone }]);
-    setTimeout(() => setItems((x) => x.filter((t) => t.id !== id)), 3600);
+    // همان پیام خطا دو بار پشت سر هم نمی‌آید
+    setItems((x) => (x.some((t) => t.text === text) ? x : [...x, { id, text, tone }]));
+    setTimeout(() => setItems((x) => x.filter((t) => t.id !== id)), tone === 'err' ? 6000 : 3600);
   }, []);
+  // خطای کارهایی (mutation) که خودشان پیام خطا نشان نمی‌دهند، از main.tsx به این‌جا می‌رسد
+  useEffect(() => {
+    const h = (e: Event) => push((e as CustomEvent<string>).detail, 'err');
+    window.addEventListener('mh:error', h);
+    return () => window.removeEventListener('mh:error', h);
+  }, [push]);
   return (
     <ToastCtx.Provider value={push}>
       {children}

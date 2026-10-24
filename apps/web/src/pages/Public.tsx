@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { BadgeCheck, CircleAlert, Compass, Search, ShieldX } from 'lucide-react';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useRouteError } from 'react-router';
 import { Brand } from '../components/Shell';
 import { Spinner } from '../components/ui';
@@ -105,13 +105,20 @@ export function NotFound() {
 /** وقتی صفحه‌ای هنگام نمایش خطا داد */
 export function RouteError() {
   const e = useRouteError() as Error | undefined;
+  // بعد از به‌روزرسانی سامانه، فایل‌های کهنهٔ صفحه پیدا نمی‌شوند: یک بار خودکار تازه می‌کنیم
+  const stale = !!e?.message && /dynamically imported module|Importing a module script failed|Loading chunk|ChunkLoadError/i.test(e.message);
+  useEffect(() => {
+    if (!stale) return;
+    try { if (sessionStorage.getItem('mh-reloaded')) return; sessionStorage.setItem('mh-reloaded', '1'); } catch { return; }
+    window.location.reload();
+  }, [stale]);
   return (
-    <div className="mx-auto grid max-w-lg justify-items-center gap-3 px-4 py-16 text-center">
+    <div className="mx-auto grid max-w-lg justify-items-center gap-3 px-4 py-16 text-center" role="alert">
       <CircleAlert className="size-16 rounded-3xl bg-flame-soft p-4 text-flame-ink" />
-      <h1 className="text-2xl font-extrabold">چیزی درست کار نکرد</h1>
-      <p className="text-muted">این صفحه باز نشد. پیشرفت و نوشته‌هایتان سالم است؛ یک بار دوباره امتحان کنید.</p>
-      <div className="mt-2 flex gap-2"><button className="btn btn-primary" onClick={() => window.location.reload()}>دوباره امتحان کنید</button><a href="/" className="btn btn-secondary">خانه</a></div>
-      {e?.message && <details className="mt-4 text-xs text-muted"><summary>جزئیات فنی</summary><code dir="ltr">{e.message}</code></details>}
+      <h1 className="text-2xl font-extrabold">{stale ? 'نسخهٔ تازه‌ای از سامانه آمده' : 'چیزی درست کار نکرد'}</h1>
+      <p className="text-muted">{stale ? 'برای دیدن این صفحه، یک بار صفحه را تازه کنید.' : 'این صفحه باز نشد. پیشرفت و نوشته‌هایتان سالم است؛ یک بار دوباره امتحان کنید. اگر باز هم نشد، از «پشتیبانی» خبر بدهید.'}</p>
+      <div className="mt-2 flex gap-2"><button className="btn btn-primary" onClick={() => window.location.reload()}>{stale ? 'تازه کردن صفحه' : 'دوباره امتحان کنید'}</button><a href="/" className="btn btn-secondary">خانه</a></div>
+      {e?.message && !stale && <details className="mt-4 text-xs text-muted"><summary>جزئیات فنی (برای پشتیبانی)</summary><code dir="ltr" className="select-all">{e.message}</code></details>}
     </div>
   );
 }

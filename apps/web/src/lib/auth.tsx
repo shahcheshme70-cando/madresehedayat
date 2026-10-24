@@ -32,6 +32,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try { if (sessionStorage.getItem('mh-eitaa-linked') === me.id) return; } catch { /* */ }
     eitaaApp().then((w) => w?.initData && api('/auth/eitaa', { body: { initData: w.initData } }).then(() => { try { sessionStorage.setItem('mh-eitaa-linked', me.id); } catch { /* */ } }).catch(() => {}));
   }, [me?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // نشست در میانهٔ کار تمام شد (توکن تازه نشد): کاربر بیرون می‌رود و صفحهٔ ورود پیام می‌دهد
+  useEffect(() => {
+    const out = () => {
+      if (!qc.getQueryData(['me'])) return;
+      qc.clear(); qc.setQueryData(['me'], null);
+      try { sessionStorage.setItem('mh-expired', '1'); } catch { /* */ }
+    };
+    window.addEventListener('mh:session-expired', out);
+    return () => window.removeEventListener('mh:session-expired', out);
+  }, [qc]);
   const has = (...r: Role[]) => !!me && r.some((x) => me.roles.includes(x));
   const value: AuthState = {
     me, loading: q.isLoading, has, isStaff: has('HQ_ADMIN', 'HQ_OPERATOR'),

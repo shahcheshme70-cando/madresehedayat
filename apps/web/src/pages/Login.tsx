@@ -33,6 +33,8 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [wait, setWait] = useState(0);
   const codeRef = useRef<HTMLInputElement>(null);
+  // اگر نشست در میانهٔ کار تمام شده بود، یک بار توضیح می‌دهیم
+  const [expired] = useState(() => { try { const x = sessionStorage.getItem('mh-expired'); sessionStorage.removeItem('mh-expired'); return !!x; } catch { return false; } });
 
   useEffect(() => { if (me) nav(next, { replace: true }); }, [me, nav, next]);
   // داخل ایتا: اگر حساب ایتا پیش‌تر وصل شده، بی‌کد وارد می‌شویم
@@ -97,6 +99,7 @@ export default function Login() {
           {step === 'mobile' && (
             <form onSubmit={sendCode} noValidate className="rise">
               <h1 className="text-[clamp(24px,3vw,30px)] font-extrabold">ورود یا ثبت‌نام</h1>
+              {expired && <p className="mt-3 rounded-xl bg-flame-soft px-3 py-2 text-sm text-flame-ink" role="status">نشست شما تمام شده بود؛ برای امنیت حساب، دوباره وارد شوید. بعد از ورود به همان صفحه برمی‌گردید.</p>}
               <p className="mt-1.5 text-muted">با شمارهٔ موبایلتان وارد شوید؛ اگر بار اول است، همین‌جا ثبت‌نام می‌کنید. اگر بله یا ایتا را در تنظیمات وصل کرده باشید، کد همان‌جا می‌آید.</p>
               <div className="field mt-6">
                 <label htmlFor="mobile">شمارهٔ موبایل</label>

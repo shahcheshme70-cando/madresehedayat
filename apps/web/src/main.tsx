@@ -1,10 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, createHashRouter, Navigate, RouterProvider, useLocation } from 'react-router';
 import { Shell } from './components/Shell';
-import { Spinner, ToastProvider } from './components/ui';
-import { ApiError } from './lib/api';
+import { OfflineBar, Spinner, ToastProvider } from './components/ui';
+import { ApiError, errorText } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import AdminShell from './pages/admin/AdminShell';
 import CourseEditor from './pages/admin/CourseEditor';
@@ -38,6 +38,13 @@ import { DemoBar } from './demo/DemoBar';
 if (savedTheme() !== 'system') applyTheme(savedTheme());
 
 const qc = new QueryClient({
+  // هر کاری که خطا داد و خودش پیامی نشان نداد، پیام فارسی سرور را در toast می‌بیند (هیچ خطایی بی‌صدا نمی‌ماند)
+  mutationCache: new MutationCache({
+    onError: (e, _v, _c, m) => {
+      if (m.options.onError || m.meta?.quiet || (e instanceof ApiError && e.code === 'session_expired')) return;
+      window.dispatchEvent(new CustomEvent('mh:error', { detail: errorText(e) }));
+    },
+  }),
   defaultOptions: {
     queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: (n, e) => !(e instanceof ApiError && e.status >= 400 && e.status < 500) && n < 2 },
   },
@@ -156,6 +163,7 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={qc}>
       <AuthProvider>
         <ToastProvider>
+          <OfflineBar />
           <RouterProvider router={router} />
           {import.meta.env.VITE_DEMO && <DemoBar />}
         </ToastProvider>

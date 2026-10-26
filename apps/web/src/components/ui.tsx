@@ -1,6 +1,6 @@
 import {
   Award, BookOpen, Check, CircleAlert, ClipboardList, Flag, GraduationCap, Headphones, Landmark, ListChecks, LoaderCircle,
-  Clock, Lock, PenLine, PlayCircle, Radio, Route, SearchX, Sparkles, Users, WifiOff, Wrench, X, type LucideIcon,
+  CalendarCheck, CalendarHeart, Clock, Dice5, Flame, HandCoins, HandHeart, HandHelping, Image, Lock, Megaphone, MessageCircleQuestion, MessagesSquare, Mic, MicVocal, Network, PartyPopper, PenLine, Presentation, Puzzle, ScanFace, Smile, Tent, Tv, PlayCircle, Radio, Route, SearchX, Sparkles, Users, WifiOff, Wrench, X, type LucideIcon,
 } from 'lucide-react';
 import { ApiError } from '../lib/api';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -9,6 +9,9 @@ import { fa } from '../lib/fa';
 /** نمادهای مجاز برای دوره و مسیر (نام در پایگاه داده) */
 export const ICONS: Record<string, LucideIcon> = {
   'book-open': BookOpen, users: Users, sparkles: Sparkles, landmark: Landmark, route: Route, 'graduation-cap': GraduationCap, award: Award, flag: Flag,
+  'messages-square': MessagesSquare, flame: Flame, megaphone: Megaphone, image: Image, 'calendar-check': CalendarCheck, 'calendar-heart': CalendarHeart,
+  'hand-heart': HandHeart, 'hand-helping': HandHelping, 'hand-coins': HandCoins, network: Network, presentation: Presentation, puzzle: Puzzle, 'dice-5': Dice5,
+  tent: Tent, 'party-popper': PartyPopper, 'scan-face': ScanFace, 'message-circle-question': MessageCircleQuestion, mic: Mic, 'mic-vocal': MicVocal, tv: Tv, smile: Smile,
 };
 export const CourseIcon = ({ name, className }: { name: string; className?: string }) => {
   const I = ICONS[name] ?? BookOpen;

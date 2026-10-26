@@ -19,7 +19,7 @@ interface FullCourse extends AdminCourse {
 }
 
 const COLORS = [['green', 'سبز'], ['dome', 'فیروزه‌ای'], ['deep', 'آبی'], ['flame', 'زرد'], ['rose', 'سرخ']];
-const TYPES: LessonType[] = ['TEXT', 'VIDEO', 'AUDIO', 'QUIZ', 'WORKSHEET', 'MISSION', 'TOOL', 'LIVE'];
+const TYPES: LessonType[] = ['TEXT', 'VIDEO', 'AUDIO', 'QUIZ', 'PRACTICE', 'WORKSHEET', 'MISSION', 'TOOL', 'LIVE'];
 
 export default function CourseEditor() {
   const { id } = useParams();
@@ -285,10 +285,44 @@ function ContentEditor({ type, c, set }: { type: LessonType; c: any; set: (c: an
       </div>
     );
     case 'QUIZ': return <QuizBuilder c={c} set={set} />;
+    case 'PRACTICE': return <PracticeBuilder c={c} set={set} />;
     case 'TOOL': return <ToolPick c={c} set={set} />;
     case 'LIVE': return <LivePick c={c} set={set} />;
     default: return <p className="text-muted">ویرایشگر این نوع درس در مرحلهٔ بعد ساخته می‌شود.</p>;
   }
+}
+
+const SCORE: [number, string][] = [[2, 'بهترین'], [1, 'قابل قبول'], [0, 'ضعیف']];
+/** سازندهٔ تمرین (سناریوی تصمیم): موقعیت‌ها، و برای هر کدام چند انتخاب با بازخورد */
+function PracticeBuilder({ c, set }: { c: any; set: (c: any) => void }) {
+  const steps: any[] = c.steps ?? [];
+  const upd = (i: number, v: any) => set({ ...c, steps: steps.map((x, j) => (j === i ? v : x)) });
+  return (
+    <div className="grid gap-4">
+      <div className="field"><label htmlFor="pin">مقدمهٔ تمرین <span className="font-normal text-muted">(اختیاری)</span></label><textarea id="pin" className="input" value={c.intro ?? ''} onChange={(e) => set({ ...c, intro: e.target.value })} /></div>
+      {steps.map((st, i) => (
+        <div key={st.id} className="grid gap-3 rounded-2xl border border-line p-4">
+          <div className="flex items-center gap-2"><b className="me-auto text-ink">موقعیت {fa(i + 1)}</b>
+            <button type="button" className="btn btn-ghost btn-icon" aria-label={`حذف موقعیت ${fa(i + 1)}`} onClick={() => set({ ...c, steps: steps.filter((_, j) => j !== i) })}><X className="size-4" /></button></div>
+          <textarea className="input" placeholder="موقعیت را کوتاه و واقعی بنویسید" value={st.situation} onChange={(e) => upd(i, { ...st, situation: e.target.value })} />
+          {(st.choices ?? []).map((ch: any, k: number) => {
+            const setCh = (v: any) => upd(i, { ...st, choices: st.choices.map((x: any, m: number) => (m === k ? v : x)) });
+            return (
+              <div key={ch.id} className="grid gap-2 rounded-xl bg-sunken p-3">
+                <div className="flex gap-2"><input className="input" placeholder={`انتخاب ${fa(k + 1)}`} value={ch.text} onChange={(e) => setCh({ ...ch, text: e.target.value })} />
+                  <select className="input w-auto" aria-label="ارزش این انتخاب" value={ch.score} onChange={(e) => setCh({ ...ch, score: Number(e.target.value) })}>{SCORE.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select>
+                  <button type="button" className="btn btn-ghost btn-icon" aria-label="حذف انتخاب" onClick={() => upd(i, { ...st, choices: st.choices.filter((_: any, m: number) => m !== k) })}><X className="size-4" /></button></div>
+                <textarea className="input min-h-16" placeholder="بازخورد این انتخاب: چرا خوب است یا چه خطری دارد" value={ch.feedback} onChange={(e) => setCh({ ...ch, feedback: e.target.value })} />
+              </div>
+            );
+          })}
+          <button type="button" className="btn btn-secondary btn-sm w-fit" onClick={() => upd(i, { ...st, choices: [...(st.choices ?? []), { id: rid(), text: '', score: 1, feedback: '' }] })}><Plus className="size-4" />انتخاب تازه</button>
+        </div>
+      ))}
+      <button type="button" className="btn btn-secondary w-fit" onClick={() => set({ ...c, steps: [...steps, { id: rid(), situation: '', choices: [{ id: rid(), text: '', score: 2, feedback: '' }, { id: rid(), text: '', score: 0, feedback: '' }] }] })}><Plus className="size-4" />موقعیت تازه</button>
+      <p className="hint">تمرین نمره ندارد. کنشگر در هر موقعیت انتخاب می‌کند و بازخورد همان انتخاب را می‌بیند؛ با پاسخ به همهٔ موقعیت‌ها درس تمام می‌شود. در هر موقعیت دست‌کم یک انتخاب «بهترین» لازم است.</p>
+    </div>
+  );
 }
 
 function LivePick({ c, set }: { c: any; set: (c: any) => void }) {

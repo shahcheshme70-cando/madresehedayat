@@ -4,6 +4,7 @@
  * فقط در ساخت نمایشی (VITE_DEMO=1) به کار می‌رود.
  */
 import seed from './seed.json';
+import full from './catalog-full.json';
 import { registerPhase3, seedPhase3 } from './phase3';
 
 type Any = any;
@@ -12,7 +13,7 @@ export class DemoError extends Error {
 }
 const E = (status: number, code: string, message: string, data: Any = {}) => new DemoError(status, code, message, data);
 
-const KEY = 'mh-demo-v4';
+const KEY = 'mh-demo-v5';
 const DEMO_CODE = '12345';
 export const DEMO_ADMIN = '09120000000';
 const now = () => new Date().toISOString();
@@ -31,6 +32,16 @@ interface DB {
 
 function fresh(): DB {
   const s = JSON.parse(JSON.stringify(seed)) as Any;
+  // کاتالوگ کامل نمونه (۲۴ دوره و ۶ مسیر از نمونهٔ اولیه)؛ مسیر نوجوانان با مسیر موجود یکی می‌شود
+  const f = JSON.parse(JSON.stringify(full)) as Any;
+  const njPath = s.paths.find((p: Any) => p.slug === 'nojavanan');
+  const base = s.pathItems.filter((i: Any) => i.pathId === njPath?.id).length;
+  // «مدیریت مسجد» کاتالوگ کامل، جای نمونهٔ کوتاه قدیمی را می‌گیرد
+  const old = s.courses.find((c: Any) => c.slug === 'masjed-modiriat');
+  if (old) { const mids = s.modules.filter((m: Any) => m.courseId === old.id).map((m: Any) => m.id); s.lessons = s.lessons.filter((l: Any) => !mids.includes(l.moduleId)); s.modules = s.modules.filter((m: Any) => m.courseId !== old.id); s.courses = s.courses.filter((c: Any) => c.id !== old.id); }
+  s.courses.push(...f.courses); s.modules.push(...f.modules); s.lessons.push(...f.lessons);
+  s.paths.push(...f.paths.filter((p: Any) => p.slug !== 'nojavan'));
+  s.pathItems.push(...f.pathItems.map((i: Any) => (i.pathId === 'pp-nojavan' && njPath ? { ...i, pathId: njPath.id, order: base + i.order } : i)));
   const t = now();
   const courses = s.courses.map((c: Any) => ({ ...c, publishedAt: t, createdAt: t, updatedAt: t }));
   const db: DB = {
@@ -215,6 +226,17 @@ function validate(type: string, c: Any): string | null {
       return null;
     case 'WORKSHEET': return c.prompt && c.fields?.length ? null : 'برگه دست‌کم یک خانه لازم دارد';
     case 'MISSION': return c.goal ? null : 'هدف مأموریت را بنویسید';
+    case 'PRACTICE': {
+      if (!Array.isArray(c.steps) || !c.steps.length) return 'تمرین دست‌کم یک موقعیت لازم دارد';
+      for (const [i, s] of c.steps.entries()) {
+        if (!s.situation?.trim()) return `متن موقعیت ${i + 1} خالی است`;
+        if (!Array.isArray(s.choices) || s.choices.length < 2) return `موقعیت ${i + 1} دست‌کم دو انتخاب لازم دارد`;
+        if (s.choices.some((x: Any) => !x.text?.trim() || !x.feedback?.trim())) return `هر انتخاب در موقعیت ${i + 1} متن و بازخورد لازم دارد`;
+        if (!s.choices.some((x: Any) => x.score === 2)) return `در موقعیت ${i + 1} دست‌کم یک انتخاب را «بهترین» علامت بزنید`;
+      }
+      return null;
+    }
+
     default: return null;
   }
 }
@@ -320,7 +342,7 @@ const lessonCtx = (id: string) => {
 };
 on('GET', '/lessons/([^/]+)', (m) => {
   const u = me(); const { l, c } = lessonCtx(m[1]); const e = enr(u.id, c.id);
-  if (!e) throw E(403, 'not_enrolled', 'اول در دوره ثبت‌نام کنید');
+  if (!e) throw E(403, 'not_enrolled', 'اول در دوره ثبت‌نام کنید', { course: { slug: c.slug, title: c.title } });
   e.lastLessonId = l.id;
   const p = prog(u.id, l.id);
   const atts = DBV.attempts.filter((a) => a.userId === u.id && a.lessonId === l.id).sort((a, b) => b.at.localeCompare(a.at));
@@ -402,7 +424,7 @@ on('PUT', '/admin/courses/([^/]+)/order', (_m, b) => { staff(); b.modules.forEac
 on('PATCH', '/admin/modules/([^/]+)', (m, b) => { staff(); const x = DBV.modules.find((y) => y.id === m[1]); x.title = b.title; return x; });
 on('DELETE', '/admin/modules/([^/]+)', (m) => { staff(); if (lessonsOf(m[1]).length) throw E(400, 'module_not_empty', 'اول درس‌های این بخش را جابه‌جا یا حذف کنید'); DBV.modules = DBV.modules.filter((y) => y.id !== m[1]); return { ok: true }; });
 on('POST', '/admin/modules/([^/]+)/lessons', (m, b) => {
-  staff(); const starter: Any = { VIDEO: { provider: 'aparat', aparatHash: '' }, AUDIO: {}, TEXT: { body: '' }, QUIZ: { questions: [] }, WORKSHEET: { prompt: '', fields: [] }, MISSION: { goal: '', steps: [] } };
+  staff(); const starter: Any = { VIDEO: { provider: 'aparat', aparatHash: '' }, AUDIO: {}, TEXT: { body: '' }, QUIZ: { questions: [] }, WORKSHEET: { prompt: '', fields: [] }, MISSION: { goal: '', steps: [] }, PRACTICE: { intro: '', steps: [] }, TOOL: {}, LIVE: {} };
   const l = { id: rid(), moduleId: m[1], title: b.title, type: b.type, order: lessonsOf(m[1]).length, durationSec: 0, required: true, isFinalQuiz: false, content: starter[b.type] ?? {} };
   DBV.lessons.push(l); return l;
 });

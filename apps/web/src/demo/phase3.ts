@@ -48,7 +48,8 @@ export function seedPhase3(db: Any) {
   Object.assign(db, { broadcasts: [], tickets: [], tmsgs: [], samples: [], pathAttempts: [], mlinks: [], access: [], boards: [], bversions: [], bmembers: [], bcomments: [], toolStatus: {},
     subscriptions: [], invoices: [], sponsors: [], services: [], costs: { ...DEFAULT_COSTS }, feedback: [], lratings: [], cratings: [] });
   const t = new Date().toISOString();
-  for (const id of ['fish', 'why5', 'eisen', 'impact', 'smart', 'raci', 'check', 'empathy', 'crazy8', 'aar']) db.toolStatus[id] = true;
+  // نسخهٔ نمایشی: هر ۳۵ ابزار منتشرشده (در سامانه ستاد از «جعبه‌ابزار» یکی‌یکی منتشر می‌کند)
+  for (const t of TOOLS) db.toolStatus[t.id] = true;
   // آزمون جامع مسیر
   const p = db.paths[0];
   if (p) { p.passScore = 60; p.quiz = { intro: 'پنج پرسش از همهٔ دوره‌های مسیر.', questions: [

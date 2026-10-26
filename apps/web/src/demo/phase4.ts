@@ -54,6 +54,16 @@ export function seedPhase4(db: Any) {
   db.cmembers.push({ campaignId: 'cmp-past', userId: 'sample3', coreId: null, provinceId: z, joinedAt: iso(-48) });
   db.cdone.push({ taskId: 'cmp-past-t1', userId: 'sample3', campaignId: 'cmp-past', provinceId: z, note: null, doneAt: iso(-45) });
 
+  // زینب: دو دورهٔ دیگر در جریان، تا خانه و «یادگیری» پر باشد
+  const lessonsOfCourse = (cid: string) => db.modules.filter((m: Any) => m.courseId === cid).sort((a: Any, b: Any) => a.order - b.order)
+    .flatMap((m: Any) => db.lessons.filter((l: Any) => l.moduleId === m.id).sort((a: Any, b: Any) => a.order - b.order));
+  for (const [cid, n, d] of [['pc-gf1', 3, 5], ['pc-mq1', 6, 9]] as [string, number, number][]) {
+    if (!db.courses.some((c: Any) => c.id === cid) || db.enrollments.some((e: Any) => e.userId === 'sample3' && e.courseId === cid)) continue;
+    const ls = lessonsOfCourse(cid);
+    db.enrollments.push({ userId: 'sample3', courseId: cid, courseVersion: 1, enrolledAt: iso(-d), completedAt: null, archivedAt: null, lastLessonId: ls[n]?.id ?? null });
+    ls.slice(0, n).filter((l: Any) => !['QUIZ', 'MISSION', 'LIVE'].includes(l.type)).forEach((l: Any, i: number) => db.progress.push({ userId: 'sample3', lessonId: l.id, positionSec: 0, completedAt: iso(-d + i * 0.5), updatedAt: iso(-d + i * 0.5), data: null }));
+  }
+
   // کلاس زنده: یکی پیش رو (با ثبت‌نام زینب)، یکی برگزارشده با حضور و ضبط
   const base = db.events.find((e: Any) => e.id === 'ev-online') ?? {};
   db.events.push({ ...base, id: 'ev-live', title: 'کلاس زنده: گفت‌وگو با نوجوان، پرسش و پاسخ', kind: 'ONLINE', startsAt: iso(2, 19), endsAt: iso(2, 20), onlineUrl: null, useBbb: true, record: true,

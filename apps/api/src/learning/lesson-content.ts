@@ -16,6 +16,11 @@ export interface QuizQuestion {
 export interface QuizContent { intro?: string; questions: QuizQuestion[] }
 export interface WorksheetContent { prompt: string; fields: { id: string; label: string; hint?: string }[] }
 export interface MissionContent { goal: string; steps: string[] }
+/** تمرین (سناریوی تصمیم): در هر موقعیت یک انتخاب؛ هر انتخاب بازخورد خودش را دارد. نمره ندارد؛ با پاسخ به همهٔ موقعیت‌ها تمام می‌شود */
+export interface PracticeContent {
+  intro?: string;
+  steps: { id: string; situation: string; choices: { id: string; text: string; score: 0 | 1 | 2; feedback: string }[] }[];
+}
 
 /** نسخهٔ امن برای یادگیرنده: پاسخ‌های درست حذف می‌شود */
 export function publicContent(type: string, content: any) {

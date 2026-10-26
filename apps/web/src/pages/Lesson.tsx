@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Award, Camera, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, Flag, Lightbulb, RotateCcw, Wrench, XCircle } from 'lucide-react';
+import { Award, BookOpen, Camera, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Clock, Flag, Lightbulb, RotateCcw, Wrench, XCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { Dialog, ErrorBox, LESSON_ICON, Spinner, useToast } from '../components/ui';
@@ -23,6 +23,14 @@ export default function Lesson() {
   if (lesson.isLoading) return <Spinner />;
   if (lesson.error) {
     const e = lesson.error as ApiError;
+    if (e.code === 'not_enrolled' && e.data?.course?.slug) return (
+      <div className="card mx-auto my-10 grid max-w-md justify-items-center gap-3 p-6 text-center">
+        <BookOpen className="size-8 text-leaf" aria-hidden="true" />
+        <p className="font-bold text-ink">این درس از دورهٔ «{e.data.course.title}» است</p>
+        <p className="text-sm text-muted">برای دیدن درس‌ها، اول در دوره ثبت‌نام کنید. ثبت‌نام رایگان است و پیشرفتتان ذخیره می‌شود.</p>
+        <Link className="btn btn-primary" to={`/courses/${e.data.course.slug}`}>رفتن به صفحهٔ دوره</Link>
+      </div>
+    );
     return <ErrorBox error={e} onRetry={e.code === 'not_enrolled' ? undefined : () => lesson.refetch()} />;
   }
   const l = lesson.data!;
@@ -116,6 +124,7 @@ function LessonBody({ l, onChange }: { l: LessonDetail; onChange: (c?: Completio
     case 'VIDEO': return <VideoLesson l={l} onChange={onChange} />;
     case 'AUDIO': return <MediaFile l={l} kind="audio" onChange={onChange} />;
     case 'QUIZ': return <Quiz l={l} onChange={onChange} />;
+    case 'PRACTICE': return <Practice l={l} onChange={onChange} />;
     case 'WORKSHEET': return <Worksheet l={l} onChange={onChange} />;
     case 'MISSION': return <Mission l={l} onChange={onChange} />;
     case 'TOOL': return <ToolLesson lessonId={l.id} />;
@@ -133,7 +142,7 @@ function VideoLesson({ l, onChange }: { l: LessonDetail; onChange: (c?: Completi
     <div className="grid gap-4">
       <div className="relative aspect-video overflow-hidden rounded-2xl bg-ink">
         {c.aparatHash ? <iframe src={`https://www.aparat.com/video/video/embed/videohash/${c.aparatHash}/vt/frame`} title={l.title} allow="autoplay; fullscreen" allowFullScreen className="absolute inset-0 size-full border-0" />
-          : <p className="absolute inset-0 grid place-items-center text-white/70">ویدیو هنوز اضافه نشده است</p>}
+          : <p className="absolute inset-0 grid place-items-center px-6 text-center text-white/70">{import.meta.env.VITE_DEMO ? 'در نسخهٔ نمایشی ویدیو پخش نمی‌شود؛ در سامانه از آپارات یا سرور مدرسه پخش می‌شود' : 'ویدیو هنوز اضافه نشده است'}</p>}
       </div>
       {c.summary && <p className="prose-fa">{c.summary}</p>}
       <p className="hint">ویدیو از آپارات پخش می‌شود؛ وقتی تا آخر دیدید، «دیدم» را بزنید.</p>
@@ -155,6 +164,13 @@ function MediaFile({ l, kind, onChange }: { l: LessonDetail; kind: 'audio' | 'vi
     if (!sent.current && m.currentTime / m.duration >= 0.9) { sent.current = true; p.mutate({ completed: true, positionSec: Math.floor(m.currentTime) }); return; }
     if (Math.abs(m.currentTime - last.current) >= 15) { last.current = m.currentTime; p.mutate({ positionSec: Math.floor(m.currentTime) }); }
   };
+  if (!src && import.meta.env.VITE_DEMO) return (
+    <div className="grid gap-4">
+      <p className="rounded-2xl bg-sunken p-5 text-muted">در نسخهٔ نمایشی فایل {kind === 'audio' ? 'صوتی' : 'ویدیو'} پخش نمی‌شود. در سامانه، با شنیدن ۹۰٪ درس خودکار تمام می‌شود.</p>
+      {l.content.summary && <p className="prose-fa">{l.content.summary}</p>}
+      <DoneBar l={l} onChange={onChange} label={kind === 'audio' ? 'شنیدم' : 'دیدم'} />
+    </div>
+  );
   if (!src) return <p className="rounded-2xl bg-sunken p-5 text-muted">فایل این درس هنوز اضافه نشده است.</p>;
   return (
     <div className="grid gap-4">
@@ -236,6 +252,60 @@ function Quiz({ l, onChange }: { l: LessonDetail; onChange: (c?: Completion | nu
           {err && <span className="err"><CircleAlert className="size-4" />{err}</span>}
         </div>
       )}
+    </div>
+  );
+}
+
+interface PStep { id: string; situation: string; choices: { id: string; text: string; score: number; feedback: string }[] }
+const P_TONE = [
+  { box: 'border-rose bg-rose-soft', label: 'راه بهتری هم هست', ink: 'text-rose' },
+  { box: 'border-flame bg-flame-soft', label: 'قابل قبول', ink: 'text-flame-ink' },
+  { box: 'border-leaf bg-leaf-soft', label: 'انتخاب خوب', ink: 'text-leaf-ink' },
+];
+
+/** تمرین (سناریوی تصمیم): موقعیت به موقعیت؛ هر انتخاب بازخورد خودش را دارد و راه درست همیشه یکی نیست */
+function Practice({ l, onChange }: { l: LessonDetail; onChange: (c?: Completion | null) => void }) {
+  const steps: PStep[] = l.content.steps ?? [];
+  const saved = (l.progress?.data as { picks?: Record<string, string> } | null)?.picks ?? {};
+  const [picks, setPicks] = useState<Record<string, string>>(saved);
+  const [i, setI] = useState(() => Math.min(Object.keys(saved).length, Math.max(0, steps.length - 1)));
+  const p = useProgress(l.id, onChange);
+  const done = !!l.progress?.completedAt;
+  const all = steps.every((s) => picks[s.id]);
+  if (!steps.length) return <p className="rounded-2xl bg-sunken p-5 text-muted">این تمرین هنوز موقعیتی ندارد.</p>;
+  const st = steps[i];
+  const pick = st.choices.find((c) => c.id === picks[st.id]);
+  const best = steps.reduce((n, s) => n + (s.choices.find((c) => c.id === picks[s.id])?.score === 2 ? 1 : 0), 0);
+  return (
+    <div className="grid gap-5">
+      {l.content.intro && <p className="prose-fa">{l.content.intro}</p>}
+      <div className="flex items-center gap-2" aria-label={`موقعیت ${fa(i + 1)} از ${fa(steps.length)}`}>
+        {steps.map((s, j) => <span key={s.id} className={`h-1.5 w-8 rounded-full ${j === i ? 'bg-flame' : picks[s.id] ? 'bg-leaf' : 'bg-line'}`} />)}
+        <span className="ms-2 text-sm text-muted">موقعیت {fa(i + 1)} از {fa(steps.length)}</span>
+      </div>
+      <div className="rounded-2xl bg-sunken p-5"><b className="mb-1 block text-sm text-muted">موقعیت</b><p className="text-ink">{st.situation}</p></div>
+      <div className="grid gap-2" role="radiogroup" aria-label="انتخاب شما">
+        {st.choices.map((c) => {
+          const on = c.id === picks[st.id];
+          const tone = on ? P_TONE[Math.max(0, Math.min(2, c.score))] : null;
+          return (
+            <button key={c.id} type="button" role="radio" aria-checked={on} disabled={!!pick && !on && done}
+              className={`rounded-2xl border p-4 text-start transition ${tone ? tone.box : 'border-line-strong hover:bg-sunken'}`}
+              onClick={() => setPicks((x) => ({ ...x, [st.id]: c.id }))}>
+              <span className="text-ink">{c.text}</span>
+              {on && <span className={`mt-2 block text-sm ${tone!.ink}`}><b>{tone!.label}: </b>{c.feedback}</span>}
+            </button>
+          );
+        })}
+      </div>
+      {pick && pick.score < 2 && <p className="hint">می‌توانید انتخاب دیگری را هم امتحان کنید و بازخوردش را ببینید.</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        {i > 0 && <button className="btn btn-ghost" onClick={() => setI(i - 1)}><ChevronRight className="size-4" />موقعیت قبل</button>}
+        {i < steps.length - 1 ? <button className="btn btn-primary" disabled={!pick} onClick={() => setI(i + 1)}>موقعیت بعد<ChevronLeft className="size-4" /></button>
+          : done ? <span className="chip chip-leaf"><CircleCheck className="size-4" />تمرین تمام شد</span>
+          : <button className="btn btn-primary" disabled={!all || p.isPending} onClick={() => p.mutate({ data: { picks }, completed: true })}>پایان تمرین</button>}
+      </div>
+      {all && <p className="text-sm text-body">در {fa(steps.length)} موقعیت، {fa(best)} بار بهترین انتخاب را کردید. این تمرین نمره ندارد؛ برای فکر کردن به موقعیت‌های واقعی است.</p>}
     </div>
   );
 }

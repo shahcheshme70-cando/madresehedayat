@@ -198,16 +198,17 @@ export class LearningService {
     return row;
   }
 
-  private async requireEnrolled(userId: string, courseId: string) {
+  private async requireEnrolled(userId: string, courseId: string, course?: { slug: string; title: string }) {
     const e = await this.db.query.enrollments.findFirst({ where: and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId)) });
-    if (!e) throw new ForbiddenException({ code: 'not_enrolled', message: 'اول در دوره ثبت‌نام کنید' });
+    // نشانی دوره همراه خطا می‌آید تا صفحهٔ درس بتواند کاربر را به ثبت‌نام ببرد
+    if (!e) throw new ForbiddenException({ code: 'not_enrolled', message: 'اول در دوره ثبت‌نام کنید', course: course ? { slug: course.slug, title: course.title } : undefined });
     return e;
   }
 
   async lesson(userId: string, lessonId: string) {
     const { l, c } = await this.lessonWithCourse(lessonId);
     if (!this.canSee(c, await this.grantedCourseIds(userId))) throw new ForbiddenException({ code: 'restricted', message: 'به این دوره دسترسی ندارید' });
-    await this.requireEnrolled(userId, c.id);
+    await this.requireEnrolled(userId, c.id, c);
     await this.db.update(enrollments).set({ lastLessonId: l.id }).where(and(eq(enrollments.userId, userId), eq(enrollments.courseId, c.id)));
     const p = await this.db.query.lessonProgress.findFirst({ where: and(eq(lessonProgress.userId, userId), eq(lessonProgress.lessonId, l.id)) });
     const attempts = l.type === 'QUIZ' ? await this.db.select({ score: quizAttempts.score, passed: quizAttempts.passed, at: quizAttempts.createdAt })
@@ -229,7 +230,7 @@ export class LearningService {
 
   async saveProgress(userId: string, lessonId: string, body: { positionSec?: number; completed?: boolean; data?: unknown }) {
     const { l, c } = await this.lessonWithCourse(lessonId);
-    await this.requireEnrolled(userId, c.id);
+    await this.requireEnrolled(userId, c.id, c);
     if (l.type === 'QUIZ' && body.completed) throw new BadRequestException({ code: 'quiz_needs_attempt', message: 'آزمون با ثبت پاسخ‌ها تکمیل می‌شود' });
     const completed = !!body.completed;
     const data = body.data as any;
@@ -248,7 +249,7 @@ export class LearningService {
   async submitQuiz(userId: string, lessonId: string, answers: Record<string, string[]>) {
     const { l, c } = await this.lessonWithCourse(lessonId);
     if (l.type !== 'QUIZ') throw new BadRequestException({ code: 'not_quiz', message: 'این درس آزمون نیست' });
-    await this.requireEnrolled(userId, c.id);
+    await this.requireEnrolled(userId, c.id, c);
     const prev = await this.db.select({ at: quizAttempts.createdAt }).from(quizAttempts)
       .where(and(eq(quizAttempts.userId, userId), eq(quizAttempts.lessonId, l.id))).orderBy(desc(quizAttempts.createdAt));
     const next = this.nextAttemptAt(prev.map((p) => p.at));

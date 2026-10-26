@@ -28,5 +28,6 @@ r = a.get(f'{B}/lessons/{L}/rating').json(); ok(r['rating']['reasons'] == ['طو
 r = a.post(f'{B}/courses/nojavan-1/rating', json={'stars': 5}); ok(r.status_code == 400 and r.json()['code'] == 'too_early', 'امتیاز دوره زود است: ' + r.json().get('message', ''))
 d = a.get(f'{B}/courses/nojavan-1').json(); ok('rating' in d and d['rating']['avg'] is None, 'امتیاز عمومی کمتر از ۵ نفر پنهان', d.get('rating'))
 q = hq.get(f'{B}/admin/content-quality').json(); ok(any(l['id'] == L and l['down'] == 1 and l['reasons'][0]['reason'] == 'طولانی بود' for l in q['lessons']) and q['comments'], 'کیفیت محتوا برای ستاد', q.get('lessons', [])[:1])
-ok('09' not in str(q) and 'یکم' not in str(q), 'کیفیت محتوا بی‌نام')
+import re
+ok(not re.search(r'09\d{9}', str(q)) and 'یکم' not in str(q), 'کیفیت محتوا بی‌نام')
 print('\nنتیجه:', 'همه درست' if not h.fails else f'{h.fails} خطا'); sys.exit(1 if h.fails else 0)

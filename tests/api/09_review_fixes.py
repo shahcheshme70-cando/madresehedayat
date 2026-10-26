@@ -94,5 +94,21 @@ r = requests.get(f'{B}/no-such-route'); ok(r.status_code == 404 and r.json()['co
 r = requests.post(f'{B}/auth/otp', data='{bad', headers={'content-type': 'application/json', 'X-Forwarded-For': rand_ip()}); ok(r.status_code == 400 and r.json()['code'] == 'bad_json', 'JSON خراب: پیام فارسی')
 r = a.post(f'{B}/feedback', json={'kind': 'XX', 'body': ''}); ok(r.status_code == 400 and '«نوع»' in r.json()['message'] and isinstance(r.json()['fields'], dict), 'خانه‌های نادرست با نام فارسی', r.json())
 
+print('۱۱. تمرین (سناریوی تصمیم)')
+psql("delete from enrollments where course_id in (select id from courses where title='دورهٔ آزمون تمرین')"); psql("delete from courses where title='دورهٔ آزمون تمرین'")
+c = hq.post(f'{B}/admin/courses', json={'title': 'دورهٔ آزمون تمرین'}).json(); CID = c.get('id'); SLUG = c.get('slug')
+hq.patch(f'{B}/admin/courses/{CID}', json={'about': 'دوره‌ای برای آزمون تمرین سناریوی تصمیم.', 'hasCertificate': False})
+M = hq.post(f'{B}/admin/courses/{CID}/modules', json={'title': 'فصل'}).json()['id']
+L = hq.post(f'{B}/admin/modules/{M}/lessons', json={'title': 'تمرین آزمون', 'type': 'PRACTICE'}).json()['id']
+bad = {'steps': [{'id': 's1', 'situation': 'موقعیت آزمون', 'choices': [{'id': 'c1', 'text': 'الف', 'score': 1, 'feedback': 'ب'}, {'id': 'c2', 'text': 'ج', 'score': 0, 'feedback': 'د'}]}]}
+hq.patch(f'{B}/admin/lessons/{L}', json={'content': bad})
+r = hq.patch(f'{B}/admin/courses/{CID}', json={'status': 'PUBLISHED'}); ok(r.status_code == 400 and 'بهترین' in str(r.json()), 'تمرین بی «بهترین» منتشر نمی‌شود', r.text)
+good = {'intro': 'آزمون', 'steps': [{**bad['steps'][0], 'choices': [{**bad['steps'][0]['choices'][0], 'score': 2}, bad['steps'][0]['choices'][1]]}]}
+ok(hq.patch(f'{B}/admin/lessons/{L}', json={'content': good}).ok, 'تمرین درست ذخیره شد')
+r = hq.patch(f'{B}/admin/courses/{CID}', json={'status': 'PUBLISHED'}); ok(r.ok, 'دوره با تمرین منتشر شد', r.text)
+ok(a.post(f'{B}/courses/{SLUG}/enroll').ok, 'ثبت‌نام')
+r = a.get(f'{B}/lessons/{L}').json(); ok(r['type'] == 'PRACTICE' and r['content']['steps'][0]['choices'][0]['feedback'], 'کنشگر موقعیت و بازخوردها را می‌گیرد')
+ok(a.post(f'{B}/lessons/{L}/progress', json={'data': {'picks': {'s1': 'c1'}}, 'completed': True}).ok, 'تمرین تمام شد')
+r = c2 = login('09126000004').get(f'{B}/lessons/{L}'); ok(r.status_code == 403 and r.json().get('course', {}).get('slug') == SLUG, 'بی‌ثبت‌نام: خطا نشانی دوره را دارد', r.text)
 psql("delete from cores where id='smkrevcore'")
 print('\nنتیجه:', 'همه درست' if not h.fails else f'{h.fails} خطا'); sys.exit(1 if h.fails else 0)

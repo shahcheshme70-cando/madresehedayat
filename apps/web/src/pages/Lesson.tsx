@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { Dialog, ErrorBox, LESSON_ICON, Spinner, useToast } from '../components/ui';
 import { LessonRating, useFeedbackContext } from '../components/Feedback';
+import { useOpenLink } from '../lib/open';
 import { api, ApiError } from '../lib/api';
 import { ToolLesson } from './Tools';
 import { LiveSection } from './Events';
@@ -509,7 +510,8 @@ function LiveLesson({ l }: { l: LessonDetail }) {
   const qc = useQueryClient(); const toast = useToast();
   const ev = useQuery({ queryKey: ['event', eventId], queryFn: () => api<EventDetail>(`/events/${eventId}`), enabled: !!eventId });
   const reg = useMutation({ mutationFn: () => api(`/events/${eventId}/register`, { method: 'POST' }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['event', eventId] }); toast('ثبت‌نام شدید؛ یادآوری می‌فرستیم'); }, onError: (e) => toast((e as Error).message, 'err') });
-  const join = useMutation({ mutationFn: () => api<{ url: string }>(`/events/${eventId}/join`, { method: 'POST' }), onSuccess: (r) => window.open(r.url, '_blank', 'noopener'), onError: (e) => toast((e as Error).message, 'err') });
+  const openLink = useOpenLink();
+  const join = useMutation({ mutationFn: () => api<{ url: string }>(`/events/${eventId}/join`, { method: 'POST' }), onSuccess: (r) => openLink(r.url), onError: (e) => toast((e as Error).message, 'err') });
   if (!eventId) return <p className="text-muted">این جلسه هنوز به برنامه‌ای وصل نشده است.</p>;
   if (ev.isLoading) return <Spinner />;
   if (ev.error) return <ErrorBox error={ev.error} />;

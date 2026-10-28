@@ -70,8 +70,11 @@ export function seedPhase4(db: Any) {
     hostName: 'فاطمه حسینی', capacity: 60, audienceGender: null, description: 'یک ساعت پرسش و پاسخ زنده دربارهٔ درس‌های دورهٔ «همراهی نوجوانان». سؤال‌هایتان را از پیش در یادداشت نگه دارید.', agenda: 'مرور کوتاه درس‌ها\nپرسش و پاسخ\nجمع‌بندی', bring: null, createdById: 'p-cty', status: 'PUBLISHED' });
   db.events.push({ ...base, id: 'ev-live-past', title: 'کلاس زنده: شروع گفت‌وگو', kind: 'ONLINE', startsAt: iso(-5, 19), endsAt: iso(-5, 20), onlineUrl: null, useBbb: true, record: true, liveFinalizedAt: iso(-5, 21),
     hostName: 'فاطمه حسینی', capacity: 60, audienceGender: null, description: 'جلسهٔ اول کلاس‌های زندهٔ دوره.', agenda: null, bring: null, createdById: 'p-cty', status: 'PUBLISHED' });
+  // کلاسی که همیشه «همین حالا» در جریان است (زمانش با هر درخواست جابه‌جا می‌شود؛ HOOK.beforeRequest)
+  db.events.push({ ...base, id: 'ev-now', title: 'کلاس زنده: نوجوان و فضای مجازی', kind: 'ONLINE', startsAt: iso(0), endsAt: iso(0), onlineUrl: null, useBbb: true, record: true,
+    hostName: 'فاطمه حسینی', capacity: 80, audienceGender: null, description: 'نوجوان‌ها بیشتر وقتشان را کجا می‌گذرانند و مسجد چطور می‌تواند در همان فضا کنارشان باشد؟ یک ساعت گفت‌وگوی زنده با پرسش و پاسخ.', agenda: 'نوجوان در فضای مجازی\nسه تجربهٔ موفق\nپرسش و پاسخ', bring: null, createdById: 'p-cty', status: 'PUBLISHED' });
   const reg = (eventId: string, userId: string, code: string, extra: Any = {}) => db.regs.push({ eventId, userId, status: 'REGISTERED', code, byId: null, lateCancel: false, attendedAt: null, method: null, feedback: null, createdAt: iso(-6), ...extra });
-  reg('ev-live', 'sample3', 'L5KD2W');
+  reg('ev-live', 'sample3', 'L5KD2W'); reg('ev-now', 'sample3', 'N4WL7Z'); reg('ev-now', 'sample1', 'N8KQ2D');
   reg('ev-live-past', 'sample3', 'L2PX8C', { attendedAt: iso(-5, 19), method: 'ONLINE' }); reg('ev-live-past', 'sample1', 'L9QR4M');
   db.liveAtt.push({ eventId: 'ev-live-past', userId: 'sample3', seconds: 52 * 60 }, { eventId: 'ev-live-past', userId: 'sample1', seconds: 11 * 60 });
   db.liveRecs.push({ eventId: 'ev-live-past', recordId: 'rec-demo-1', durationSec: 58 * 60, startedAt: iso(-5, 19), expiresAt: iso(177), deletedAt: null });
@@ -80,7 +83,7 @@ export function seedPhase4(db: Any) {
   const mod = nj1 && db.modules.filter((m: Any) => m.courseId === nj1.id).sort((a: Any, b: Any) => b.order - a.order)[0];
   if (mod) {
     const order = Math.max(-1, ...db.lessons.filter((l: Any) => l.moduleId === mod.id).map((l: Any) => l.order)) + 1;
-    db.lessons.push({ id: 'ls-live', moduleId: mod.id, order, title: 'جلسهٔ زنده: پرسش و پاسخ با مربی', type: 'LIVE', durationSec: 3600, required: false, isFinalQuiz: false, content: { eventId: 'ev-live' } });
+    db.lessons.push({ id: 'ls-live', moduleId: mod.id, order, title: 'جلسهٔ زنده: پرسش و پاسخ با مربی', type: 'LIVE', durationSec: 3600, required: false, isFinalQuiz: false, content: { eventId: 'ev-now' } });
   }
 }
 
@@ -277,6 +280,10 @@ export function registerPhase4(X: Any, H: { orgGate: (nid: string, f?: string) =
     }
   };
   const canSee = (uid: string, e: Any) => isHQ(uid) || e.createdById === uid || regOf(e.id, uid)?.status === 'REGISTERED';
+  X.beforeRequest = () => {
+    const e = DB().events.find((x: Any) => x.id === 'ev-now'); if (!e) return;
+    const t = Date.now(); e.startsAt = new Date(t - 12 * 60_000).toISOString(); e.endsAt = new Date(t + 48 * 60_000).toISOString();
+  };
   const extra = (e: Any) => ({ useBbb: !!e.useBbb, record: !!(e.useBbb && e.record) });
   wrap('GET', '/events/([^/]+)', (orig: Any) => (m: Any, b: Any, q: Any) => { const r = orig(m, b, q); const e = ev(m[1]); return { ...r, ...extra(e), onlineSoon: r.onlineSoon || (e.kind === 'ONLINE' && !!e.useBbb) }; });
   wrap('GET', '/events', (orig: Any) => (m: Any, b: Any, q: Any) => orig(m, b, q).map((r: Any) => { const e = DB().events.find((x: Any) => x.id === r.id); return e ? { ...r, ...extra(e) } : r; }));
@@ -287,12 +294,27 @@ export function registerPhase4(X: Any, H: { orgGate: (nid: string, f?: string) =
     if (!host && r?.status !== 'REGISTERED') throw E(403, 'not_registered', 'اول در کلاس ثبت‌نام کنید');
     if (!host && Date.now() < +new Date(e.startsAt) - 15 * 60_000) throw E(400, 'early', 'کلاس از ۱۵ دقیقه پیش از شروع باز می‌شود');
     if (Date.now() > +new Date(e.endsAt)) throw E(400, 'ended', 'این کلاس تمام شده است؛ اگر ضبط شده باشد، ضبطش همین‌جا می‌آید');
-    // در نسخهٔ نمایشی کلاس واقعی نداریم: حضور کامل ثبت می‌شود و پیوند نمونه باز می‌شود
-    const a = DB().liveAtt.find((x: Any) => x.eventId === e.id && x.userId === u.id);
-    if (a) a.seconds = Math.max(a.seconds, 40 * 60); else DB().liveAtt.push({ eventId: e.id, userId: u.id, seconds: 40 * 60 });
-    if (r) { r.attendedAt ??= now(); r.method ??= 'ONLINE'; }
-    completeLive(u.id, e.id);
-    return { url: 'https://example.org/live-class', live: true };
+    // در نسخهٔ نمایشی سرور BigBlueButton نداریم: اتاق شبیه‌سازی‌شده باز می‌شود و حضور را خودش ثبت می‌کند
+    return { url: `/live/${e.id}${host ? '?host=1' : ''}`, live: true };
+  });
+  // اتاق شبیه‌سازی‌شده هر چند ثانیه حضور را جلو می‌برد (هر ثانیه = یک دقیقه، تا قاعدهٔ «نیمی از کلاس» دیده شود)
+  on('POST', '/events/([^/]+)/live/demo-tick', (m: Any, b: Any) => {
+    const u = me(); const e = ev(m[1]);
+    const total = (+new Date(e.endsAt) - +new Date(e.startsAt)) / 1000;
+    let a = DB().liveAtt.find((x: Any) => x.eventId === e.id && x.userId === u.id);
+    if (!a) { a = { eventId: e.id, userId: u.id, seconds: 0 }; DB().liveAtt.push(a); }
+    a.seconds = Math.min(total, a.seconds + Math.max(0, Math.min(600, Number(b.seconds) || 0)));
+    const attended = a.seconds >= total * 0.5;
+    const r = regOf(e.id, u.id);
+    if (attended && r && !r.attendedAt) { r.attendedAt = now(); r.method = 'ONLINE'; }
+    if (attended) completeLive(u.id, e.id);
+    return { minutes: Math.round(a.seconds / 60), needed: Math.ceil(total * 0.5 / 60), total: Math.round(total / 60), attended };
+  });
+  on('GET', '/demo/live/([^/]+)', (m: Any) => {
+    const u = me(); const e = ev(m[1]);
+    const regs = DB().regs.filter((r: Any) => r.eventId === e.id && r.status === 'REGISTERED').map((r: Any) => r.userId);
+    return { id: e.id, title: e.title, hostName: e.hostName, startsAt: e.startsAt, endsAt: e.endsAt, record: !!e.record, agenda: e.agenda, me: `${U(u.id)?.firstName ?? ''} ${U(u.id)?.lastName ?? ''}`.trim(),
+      host: isHQ(u.id) || e.createdById === u.id, registered: regs.length, recordings: DB().liveRecs.filter((r: Any) => r.eventId === e.id && !r.deletedAt).length };
   });
   on('GET', '/events/([^/]+)/live', (m: Any) => {
     const u = me(); const e = ev(m[1]);
@@ -309,7 +331,7 @@ export function registerPhase4(X: Any, H: { orgGate: (nid: string, f?: string) =
     const r = DB().liveRecs.find((x: Any) => x.eventId === e.id && x.recordId === m[2]);
     if (!r || r.deletedAt) throw E(404, 'no_recording', 'این ضبط دیگر نگه داشته نمی‌شود (بیش از ۶ ماه)');
     completeLive(u.id, e.id);
-    return { url: 'https://example.org/recording' };
+    return { url: `/live/${e.id}?replay=${encodeURIComponent(m[2])}` };
   });
   wrap('GET', '/manage/events/([^/]+)', (orig: Any) => (m: Any, b: Any, q: Any) => {
     const r = orig(m, b, q); const e = ev(m[1]);

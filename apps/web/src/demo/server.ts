@@ -13,7 +13,7 @@ export class DemoError extends Error {
 }
 const E = (status: number, code: string, message: string, data: Any = {}) => new DemoError(status, code, message, data);
 
-const KEY = 'mh-demo-v5';
+const KEY = 'mh-demo-v6';
 const DEMO_CODE = '12345';
 export const DEMO_ADMIN = '09120000000';
 const now = () => new Date().toISOString();
@@ -744,6 +744,7 @@ registerPhase3(Object.assign(HOOK, {
 
 export async function demoApi(path: string, method: string, body: Any): Promise<Any> {
   await new Promise((r) => setTimeout(r, 120)); // حس شبکه
+  HOOK.beforeRequest?.();
   const [p, qs] = path.split('?');
   for (const [mt, re, h] of R) {
     if (mt !== method) continue;

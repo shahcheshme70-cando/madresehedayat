@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { Dialog, Empty, ErrorBox, Spinner, useToast } from '../components/ui';
 import { useFeedbackContext } from '../components/Feedback';
+import { useOpenLink } from '../lib/open';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { fa, jDate, jDateTime, jTime, REG_LABEL } from '../lib/fa';
@@ -101,9 +102,10 @@ export function EventPage() {
     onSuccess: () => { done(); setAskCancel(false); toast('انصراف ثبت شد؛ جایتان به نفر بعدی می‌رسد'); },
     onError: (e) => toast((e as Error).message, 'err'),
   });
+  const openLink = useOpenLink();
   const join = useMutation({
     mutationFn: () => api<{ url: string }>(`/events/${id}/join`, { method: 'POST' }),
-    onSuccess: (r) => { done(); window.open(r.url, '_blank', 'noopener'); },
+    onSuccess: (r) => { done(); openLink(r.url); },
     onError: (e) => toast((e as Error).message, 'err'),
   });
   if (q.isLoading) return <Spinner />;
@@ -168,6 +170,7 @@ export function EventPage() {
 
           {active && !started && e.status === 'PUBLISHED' && <button className="btn btn-ghost btn-sm text-rose" onClick={() => setAskCancel(true)}>انصراف</button>}
           {e.ledCores.length > 0 && !closed && <button className="btn btn-secondary btn-sm" onClick={() => setGroup(true)}><Users className="size-4" />ثبت‌نام گروهی هسته</button>}
+          {e.canManage && e.useBbb && e.status === 'PUBLISHED' && !ended && e.my?.status !== 'REGISTERED' && <button className="btn btn-primary btn-sm" onClick={() => join.mutate()} disabled={join.isPending}><MonitorPlay className="size-4" />ورود به کلاس (برگزارکننده)</button>}
           {e.canManage && <Link className="btn btn-ghost btn-sm" to={`/manage/events/${e.id}`}>مدیریت این برنامه</Link>}
           {e.my?.attendedAt && <Feedback e={e} onDone={done} />}
         </aside>
@@ -238,9 +241,9 @@ function GroupRegister({ e, onClose }: { e: EventDetail; onClose: () => void }) 
 interface LiveInfo { useBbb: boolean; record: boolean; available: boolean; finalized: boolean; attendance: { minutes: number; needed: number; total: number } | null; recordings: { id: string; durationSec: number | null; startedAt: string | null; expiresAt: string }[]; canSeeRecordings: boolean }
 export function LiveSection({ eventId, ended }: { eventId: string; ended: boolean }) {
   const q = useQuery({ queryKey: ['live', eventId], queryFn: () => api<LiveInfo>(`/events/${eventId}/live`), refetchInterval: ended ? false : 60_000 });
-  const qc = useQueryClient(); const toast = useToast();
+  const qc = useQueryClient(); const toast = useToast(); const openLink = useOpenLink();
   const open = useMutation({ mutationFn: (rid: string) => api<{ url: string }>(`/events/${eventId}/recordings/${rid}`, { method: 'POST' }),
-    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['lesson'] }); qc.invalidateQueries({ queryKey: ['course'] }); window.open(r.url, '_blank', 'noopener'); }, onError: (e) => toast((e as Error).message, 'err') });
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['lesson'] }); qc.invalidateQueries({ queryKey: ['course'] }); openLink(r.url); }, onError: (e) => toast((e as Error).message, 'err') });
   const l = q.data; if (!l) return null;
   if (!l.attendance && !l.recordings.length && !(ended && l.record && l.canSeeRecordings)) return null;
   return (

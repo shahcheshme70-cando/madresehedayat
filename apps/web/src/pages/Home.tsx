@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Award, ChevronLeft, Play, Route } from 'lucide-react';
+import { Award, ChevronLeft, Play, Radio, Route } from 'lucide-react';
 import { Link } from 'react-router';
 import { CourseCard } from '../components/CourseCard';
 import { CourseIcon, Empty, ErrorBox, Spinner } from '../components/ui';
@@ -30,8 +30,18 @@ export default function Home() {
   const doneCount = (mine.data ?? []).filter((c) => c.me?.completedAt).length;
   const fresh = (catalog.data ?? []).filter((c) => !c.me).slice(0, 3);
 
+  // کلاس آنلاینی که در آن ثبت‌نام کرده‌ام و همین حالا در جریان است
+  const liveNow = (events.data ?? []).find((e) => e.kind === 'ONLINE' && e.my?.status === 'REGISTERED' && e.status === 'PUBLISHED'
+    && new Date(e.startsAt).getTime() - 15 * 60_000 <= Date.now() && Date.now() <= new Date(e.endsAt).getTime());
   return (
     <div className="rise grid gap-10">
+      {liveNow && (
+        <Link to={`/events/${liveNow.id}`} className="flex flex-wrap items-center gap-3 rounded-2xl bg-ink p-4 text-bg no-underline shadow-lift">
+          <span className="flex items-center gap-1.5 rounded-full bg-rose px-3 py-1 text-xs font-bold text-white"><span className="size-2 animate-pulse rounded-full bg-white" />{new Date(liveNow.startsAt) <= new Date() ? 'الان زنده' : 'به‌زودی'}</span>
+          <span className="min-w-0 flex-1"><b className="block">{liveNow.title}</b><span className="text-sm opacity-75">{liveNow.hostName ?? ''}</span></span>
+          <span className="btn btn-primary btn-sm"><Radio className="size-4" />ورود به کلاس</span>
+        </Link>
+      )}
       <section>
         <h1 className="text-[clamp(24px,3vw,32px)] font-extrabold">{greet()}، {me?.firstName}</h1>
         <p className="mt-1 text-muted">{me?.mosque?.name ?? me?.nearMosque ?? ''}{me?.county ? ` · ${me.county.name}` : ''}</p>

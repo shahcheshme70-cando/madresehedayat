@@ -1,5 +1,5 @@
 import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { StrictMode, type ReactNode } from 'react';
+import { lazy, StrictMode, Suspense, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, createHashRouter, Navigate, RouterProvider, useLocation } from 'react-router';
 import { Shell } from './components/Shell';
@@ -37,6 +37,9 @@ import { DemoBar } from './demo/DemoBar';
 
 if (savedTheme() !== 'system') applyTheme(savedTheme());
 
+// فقط نسخهٔ نمایشی: اتاق کلاس زندهٔ شبیه‌سازی‌شده (در سامانه، کلاس روی BigBlueButton باز می‌شود)
+const DemoLiveRoom = import.meta.env.VITE_DEMO ? lazy(() => import('./demo/LiveRoom')) : null;
+
 const qc = new QueryClient({
   // هر کاری که خطا داد و خودش پیامی نشان نداد، پیام فارسی سرور را در toast می‌بیند (هیچ خطایی بی‌صدا نمی‌ماند)
   mutationCache: new MutationCache({
@@ -68,6 +71,7 @@ const router = (import.meta.env.VITE_DEMO ? createHashRouter : createBrowserRout
   { path: '/verify/:code', element: <VerifyPage /> },
   { path: '/terms', element: <TermsPage /> },
   { path: '/b/:token', element: <PublicBoard /> },
+  ...(DemoLiveRoom ? [{ path: '/live/:id', element: <RequireAuth><Suspense fallback={<Spinner />}><DemoLiveRoom /></Suspense></RequireAuth> }] : []),
   {
     element: <RequireAuth><Shell /></RequireAuth>,
     errorElement: <RouteError />,

@@ -8,8 +8,10 @@ export function DemoBar() {
   const [open, setOpen] = useState(false);
   useEffect(() => { const t = setInterval(() => setHash(window.location.hash), 400); return () => clearInterval(t); }, []);
   const admin = hash.startsWith('#/admin');
+  const inRoom = hash.startsWith('#/live/'); // در اتاق کلاس، نوار کنترل پایین صفحه جای این دکمه است
   const show = open || hash.startsWith('#/login');
   const as = (m: string) => { demoLoginAs(m); window.location.hash = m === PERSONAS[PERSONAS.length - 1].mobile ? '#/admin' : '#/'; window.location.reload(); };
+  if (inRoom) return null;
   return (
     <div className={`fixed z-40 ${admin ? 'bottom-3' : 'bottom-[calc(84px+env(safe-area-inset-bottom,0px))] md:bottom-3'}`} style={{ left: 'max(12px, env(safe-area-inset-left, 0px))' }}>
       {show ? (

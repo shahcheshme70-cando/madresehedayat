@@ -208,3 +208,4 @@ select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csv
   .bfish .spine { display: none; }
   .bchain .link + .link { margin-inline-start: 0; }
 }
+@keyframes float-up { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(-160px) scale(1.3); } }
